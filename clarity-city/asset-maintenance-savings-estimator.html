@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Asset Maintenance Savings Estimator — ZPro Solutions</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --border: #e2e5ea;
+    --text: #1a2330;
+    --muted: #5a6577;
+    --accent: #1a56db;
+    --accent-light: #ebf0fd;
+    --low: #0e7a4e;
+    --low-bg: #ecfdf5;
+    --high: #1a56db;
+    --high-bg: #ebf0fd;
+    --warn: #b45309;
+    --radius: 10px;
+    --shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.05);
+  }
+
+  body {
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 24px 16px 48px;
+  }
+
+  .page { max-width: 820px; margin: 0 auto; }
+
+  /* ── Header ── */
+  .header { margin-bottom: 28px; }
+  .header-brand {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+  .header h1 {
+    font-size: clamp(20px, 4vw, 28px);
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.25;
+  }
+  .header p {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 14px;
+    max-width: 560px;
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .card-title {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 18px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Form grid ── */
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 540px) { .form-grid { grid-template-columns: 1fr; } }
+
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .field .unit-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .unit-prefix {
+    position: absolute;
+    left: 10px;
+    color: var(--muted);
+    font-size: 14px;
+    pointer-events: none;
+    user-select: none;
+  }
+  .unit-suffix {
+    position: absolute;
+    right: 10px;
+    color: var(--muted);
+    font-size: 14px;
+    pointer-events: none;
+    user-select: none;
+  }
+  input[type="number"], input[type="text"] {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    font-size: 15px;
+    font-family: inherit;
+    color: var(--text);
+    background: #fafbfc;
+    transition: border-color .15s;
+    -moz-appearance: textfield;
+  }
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
+  input[type="number"]:focus, input[type="text"]:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(26,86,219,.12);
+  }
+  .has-prefix input { padding-left: 26px; }
+  .has-suffix input { padding-right: 32px; }
+
+  /* ── Slider ── */
+  .slider-row { grid-column: 1 / -1; }
+  .slider-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .slider-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(to right, var(--accent) var(--pct, 50%), #d1d5db var(--pct, 50%));
+    outline: none;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 3px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.25);
+    cursor: pointer;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 3px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.25);
+    cursor: pointer;
+  }
+  .slider-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+  /* ── Benchmarks ── */
+  .bench-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 540px) { .bench-grid { grid-template-columns: 1fr; } }
+  .bench-field { display: flex; flex-direction: column; gap: 4px; }
+  .bench-field label { font-size: 13px; font-weight: 600; color: var(--text); }
+  .bench-note { font-size: 11px; color: var(--muted); line-height: 1.4; }
+  .bench-note a { color: var(--accent); text-decoration: none; }
+
+  /* ── Results card ── */
+  .results { border: 2px solid var(--accent); }
+  .results-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 540px) { .results-grid { grid-template-columns: 1fr; } }
+
+  .est-block {
+    border-radius: 8px;
+    padding: 18px;
+  }
+  .est-block.low  { background: var(--low-bg);  border: 1px solid #a7f3d0; }
+  .est-block.high { background: var(--high-bg); border: 1px solid #bfdbfe; }
+  .est-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .est-block.low  .est-label { color: var(--low); }
+  .est-block.high .est-label { color: var(--high); }
+  .est-total {
+    font-size: clamp(26px, 5vw, 36px);
+    font-weight: 800;
+    line-height: 1.1;
+    margin-bottom: 12px;
+  }
+  .est-block.low  .est-total { color: var(--low); }
+  .est-block.high .est-total { color: var(--high); }
+  .est-breakdown { font-size: 13px; color: var(--muted); line-height: 1.8; }
+  .est-breakdown span { font-weight: 600; color: var(--text); }
+
+  /* Divider row */
+  .result-note {
+    font-size: 13px;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+    margin-bottom: 18px;
+  }
+  .result-note strong { color: var(--text); }
+
+  /* ── CTA ── */
+  .cta-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--accent);
+    color: #fff;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 7px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background .15s, transform .1s;
+  }
+  .btn-primary:hover { background: #1648c5; transform: translateY(-1px); }
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: transparent;
+    color: var(--accent);
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 20px;
+    border: 1px solid var(--accent);
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .btn-secondary:hover { background: var(--accent-light); }
+
+  /* ── Disclaimer ── */
+  .disclaimer {
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 12.5px;
+    color: var(--warn);
+    line-height: 1.55;
+  }
+  .disclaimer strong { font-weight: 700; }
+
+  /* ── Footer ── */
+  .footer {
+    margin-top: 32px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+
+  /* ── Print ── */
+  @media print {
+    body { background: #fff; padding: 0; font-size: 13px; }
+    .no-print { display: none !important; }
+    .card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
+    .results { border-color: #333; }
+    a[href]::after { content: none; }
+    .header h1 { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-brand">ZPro Solutions</div>
+    <h1>Asset Maintenance Savings Estimator</h1>
+    <p>Enter your current maintenance profile to see potential first-year savings from a planned maintenance programme.</p>
+  </header>
+
+  <!-- Inputs -->
+  <section class="card no-print" aria-label="Input parameters">
+    <div class="card-title">Your Maintenance Profile</div>
+    <div class="form-grid">
+
+      <div class="field">
+        <label for="annualSpend">Annual Maintenance Spend</label>
+        <div class="unit-wrap has-prefix">
+          <span class="unit-prefix">$</span>
+          <input type="number" id="annualSpend" value="2000000" min="0" step="10000" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="reactivePct">% of Work That Is Reactive</label>
+        <div class="unit-wrap has-suffix">
+          <input type="number" id="reactivePct" value="55" min="0" max="100" step="1" />
+          <span class="unit-suffix">%</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="downtimeHours">Unplanned Downtime Hours / Year</label>
+        <input type="number" id="downtimeHours" value="200" min="0" step="10" />
+      </div>
+
+      <div class="field">
+        <label for="costPerHour">Cost Per Downtime Hour</label>
+        <div class="unit-wrap has-prefix">
+          <span class="unit-prefix">$</span>
+          <input type="number" id="costPerHour" value="5000" min="0" step="100" />
+        </div>
+      </div>
+
+      <!-- Slider spans full width -->
+      <div class="field slider-row">
+        <div class="slider-header">
+          <label for="shiftSlider">% of Reactive Work Shifted to Planned (Year 1)</label>
+          <span class="slider-value" id="shiftDisplay">50%</span>
+        </div>
+        <input type="range" id="shiftSlider" min="0" max="100" value="50" step="1" />
+        <div class="slider-labels"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Editable Benchmarks -->
+  <section class="card no-print" aria-label="Benchmark parameters">
+    <div class="card-title">Benchmark Parameters <span style="font-weight:400;font-size:12px;color:var(--muted);text-transform:none;letter-spacing:0">(editable)</span></div>
+    <div class="bench-grid">
+
+      <div class="bench-field">
+        <label for="lowBench">Low Estimate — Maintenance Cost Reduction</label>
+        <div class="field">
+          <div class="unit-wrap has-suffix">
+            <input type="number" id="lowBench" value="30" min="0" max="100" step="1" />
+            <span class="unit-suffix">%</span>
+          </div>
+        </div>
+        <span class="bench-note">
+          Conservative savings factor applied to reactive spend shifted to planned.
+          Source: <em>US DOE O&amp;M Best Practices Guide (Rev. 3)</em> — planned maintenance typically reduces maintenance costs 12–18%, with reactive-to-planned conversion saving 25–35%.
+        </span>
+      </div>
+
+      <div class="bench-field">
+        <label for="highBench">High Estimate — Maintenance Cost Reduction</label>
+        <div class="field">
+          <div class="unit-wrap has-suffix">
+            <input type="number" id="highBench" value="40" min="0" max="100" step="1" />
+            <span class="unit-suffix">%</span>
+          </div>
+        </div>
+        <span class="bench-note">
+          Optimistic savings factor; consistent with top-quartile performers.
+          Source: <em>McKinsey &amp; Company — "Transforming maintenance operations"</em> — leading sites capture 30–40% cost reductions through predictive and preventive programmes.
+        </span>
+      </div>
+
+      <div class="bench-field">
+        <label for="lowDownBench">Low Estimate — Downtime Reduction</label>
+        <div class="field">
+          <div class="unit-wrap has-suffix">
+            <input type="number" id="lowDownBench" value="30" min="0" max="100" step="1" />
+            <span class="unit-suffix">%</span>
+          </div>
+        </div>
+        <span class="bench-note">
+          Conservative reduction in unplanned downtime hours attributable to shifted reactive work.
+          Source: <em>US DOE O&amp;M Best Practices Guide (Rev. 3).</em>
+        </span>
+      </div>
+
+      <div class="bench-field">
+        <label for="highDownBench">High Estimate — Downtime Reduction</label>
+        <div class="field">
+          <div class="unit-wrap has-suffix">
+            <input type="number" id="highDownBench" value="40" min="0" max="100" step="1" />
+            <span class="unit-suffix">%</span>
+          </div>
+        </div>
+        <span class="bench-note">
+          Optimistic downtime reduction for high-maturity implementations.
+          Source: <em>McKinsey &amp; Company — "Transforming maintenance operations".</em>
+        </span>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Results -->
+  <section class="card results" id="resultsCard" aria-label="Savings estimate">
+    <div class="card-title" style="border-color:#bfdbfe;">📊 Estimated First-Year Savings</div>
+
+    <div class="results-grid">
+      <div class="est-block low">
+        <div class="est-label">⬇ Low Estimate</div>
+        <div class="est-total" id="lowTotal">—</div>
+        <div class="est-breakdown">
+          Maintenance savings: <span id="lowMaint">—</span><br>
+          Downtime savings:&nbsp;&nbsp;&nbsp;<span id="lowDown">—</span>
+        </div>
+      </div>
+      <div class="est-block high">
+        <div class="est-label">⬆ High Estimate</div>
+        <div class="est-total" id="highTotal">—</div>
+        <div class="est-breakdown">
+          Maintenance savings: <span id="highMaint">—</span><br>
+          Downtime savings:&nbsp;&nbsp;&nbsp;<span id="highDown">—</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="result-note" id="assumptionNote"></p>
+
+    <div class="cta-row">
+      <a class="btn-primary" href="mailto:info@zprosolutions.com?subject=Asset%20Maintenance%20Savings%20Walkthrough&body=Hi%2C%20I%20used%20the%20savings%20estimator%20and%20would%20like%20to%20book%20a%20walkthrough.">
+        📅 Book a Walkthrough
+      </a>
+      <button class="btn-secondary no-print" onclick="window.print()">
+        🖨 Print / Save PDF
+      </button>
+    </div>
+  </section>
+
+  <!-- Disclaimer -->
+  <div class="disclaimer no-print">
+    <strong>Disclaimer:</strong> These are illustrative estimates only, based on published industry benchmarks. Actual savings will vary depending on asset type, operational context, existing maintenance maturity, workforce capability, and implementation quality. ZPro Solutions makes no warranty as to the accuracy of these projections. This tool does not collect or transmit any data.
+  </div>
+
+  <!-- Print-only assumptions block -->
+  <div id="printAssumptions" style="display:none"></div>
+
+  <footer class="footer">
+    &copy; <span id="yr"></span> ZPro Solutions &mdash; Asset Maintenance Savings Estimator &mdash; Made with IBM Bob
+  </footer>
+
+</div>
+
+<script>
+  document.getElementById('yr').textContent = new Date().getFullYear();
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  function fmt(n) {
+    if (isNaN(n)) return '—';
+    return '$' + Math.round(n).toLocaleString('en-US');
+  }
+  function pct(v) { return (parseFloat(v) || 0) / 100; }
+  function num(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+  // ── Slider track fill ────────────────────────────────────────────────────
+  const slider = document.getElementById('shiftSlider');
+  const shiftDisplay = document.getElementById('shiftDisplay');
+
+  function updateSliderFill() {
+    const v = slider.value;
+    slider.style.setProperty('--pct', v + '%');
+    shiftDisplay.textContent = v + '%';
+  }
+  slider.addEventListener('input', () => { updateSliderFill(); calculate(); });
+  updateSliderFill();
+
+  // ── Calculation ──────────────────────────────────────────────────────────
+  function calculate() {
+    const spend       = num('annualSpend');
+    const reactive    = pct(num('reactivePct'));
+    const shift       = pct(slider.value);
+    const downHours   = num('downtimeHours');
+    const costPerHour = num('costPerHour');
+    const lowB        = pct(num('lowBench'));
+    const highB       = pct(num('highBench'));
+    const lowDB       = pct(num('lowDownBench'));
+    const highDB      = pct(num('highDownBench'));
+
+    const lowMaint  = spend * reactive * shift * lowB;
+    const highMaint = spend * reactive * shift * highB;
+    const lowDT     = downHours * costPerHour * shift * lowDB;
+    const highDT    = downHours * costPerHour * shift * highDB;
+
+    document.getElementById('lowMaint').textContent  = fmt(lowMaint);
+    document.getElementById('highMaint').textContent = fmt(highMaint);
+    document.getElementById('lowDown').textContent   = fmt(lowDT);
+    document.getElementById('highDown').textContent  = fmt(highDT);
+    document.getElementById('lowTotal').textContent  = fmt(lowMaint + lowDT);
+    document.getElementById('highTotal').textContent = fmt(highMaint + highDT);
+
+    const shiftPct = Math.round(parseFloat(slider.value));
+    document.getElementById('assumptionNote').innerHTML =
+      '<strong>Assumptions:</strong> ' +
+      '$' + Math.round(spend).toLocaleString() + ' annual spend · ' +
+      Math.round(num('reactivePct')) + '% reactive · ' +
+      shiftPct + '% shifted to planned · ' +
+      Math.round(downHours) + ' downtime hrs @ $' + Math.round(costPerHour).toLocaleString() + '/hr · ' +
+      'Low benchmark: ' + Math.round(num('lowBench')) + '% / ' + Math.round(num('lowDownBench')) + '% · ' +
+      'High benchmark: ' + Math.round(num('highBench')) + '% / ' + Math.round(num('highDownBench')) + '%';
+  }
+
+  // ── Wire all inputs ──────────────────────────────────────────────────────
+  ['annualSpend','reactivePct','downtimeHours','costPerHour',
+   'lowBench','highBench','lowDownBench','highDownBench'].forEach(id => {
+    document.getElementById(id).addEventListener('input', calculate);
+  });
+
+  calculate(); // initial run
+</script>
+</body>
+</html>

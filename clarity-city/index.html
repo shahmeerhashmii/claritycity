@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Clarity City</title>
+  <link rel="stylesheet" href="./style.css">
+
+  <!-- Local Pinned ES Module Import Map (Works 100% Offline) -->
+  <!-- SVG Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏙️</text></svg>">
+
+  <!-- Local Pinned ES Module Import Map (Works 100% Offline) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./lib/three.module.js",
+      "three/addons/": "./lib/",
+      "three/addons/controls/OrbitControls.js": "./lib/OrbitControls.js",
+      "three/addons/controls/OrbitControls": "./lib/OrbitControls.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- Guided Tour Start Screen Modal Overlay -->
+  <div id="tour-start-screen" class="tour-modal-backdrop">
+    <div class="tour-start-card">
+      <div class="tour-start-tag">EXECUTIVE SIMULATION & WALKTHROUGH</div>
+      <h1 class="tour-start-title">CLARITY CITY</h1>
+      <p class="tour-start-desc">
+        Welcome to Clarity City. An interactive 3D digital twin of municipal infrastructure comparing the 20-year financial and operational impacts of Reactive vs Predictive asset management across 758 physical assets.
+      </p>
+
+      <div class="tour-meta-grid">
+        <div class="tour-meta-box">
+          <span class="meta-label">POPULATION</span>
+          <span class="meta-val">100,000</span>
+        </div>
+        <div class="tour-meta-box">
+          <span class="meta-label">ASSET INVENTORY</span>
+          <span class="meta-val">758 Physical Units</span>
+        </div>
+        <div class="tour-meta-box">
+          <span class="meta-label">SIMULATION HORIZON</span>
+          <span class="meta-val">20 Yrs (240 Months)</span>
+        </div>
+        <div class="tour-meta-box">
+          <span class="meta-label">WALKTHROUGH DURATION</span>
+          <span class="meta-val">6 to 8 Minutes</span>
+        </div>
+      </div>
+
+      <div class="tour-start-actions">
+        <button id="btn-start-tour" class="btn-primary-large">Guided Tour (Click-Through)</button>
+        <button id="btn-start-freeplay" class="btn-secondary-large">Free Roam</button>
+      </div>
+
+      <div class="tour-start-hint">
+        Clicker & Keyboard: <kbd>Space</kbd> or <kbd>→</kbd> Next, <kbd>←</kbd> Back, <kbd>N</kbd> Presenter Notes, <kbd>Esc</kbd> Exit.
+      </div>
+    </div>
+  </div>
+
+  <!-- Tour Top Segmented Progress Bar -->
+  <div id="tour-top-bar" class="tour-top-bar hidden">
+    <div class="tour-top-left">
+      <span class="tour-mode-badge">GUIDED TOUR</span>
+      <span id="tour-step-counter" class="tour-step-counter">Step 1 of 12</span>
+    </div>
+    <div id="tour-progress-segments" class="tour-progress-segments"></div>
+    <div class="tour-top-right">
+      <button id="btn-tour-exit-top" class="tour-exit-link" title="Exit Tour (Esc)">Exit Tour</button>
+    </div>
+  </div>
+
+  <!-- Tour HUD Overlay -->
+  <div id="tour-hud-overlay" class="tour-hud-overlay hidden">
+    <!-- Chapter Splash Title Card -->
+    <div id="tour-title-card" class="tour-title-card hidden">
+      <div id="tour-card-number" class="tour-card-number">CHAPTER 1</div>
+      <div id="tour-card-title" class="tour-card-title">MEET THE CITY</div>
+    </div>
+
+    <!-- Chapter Caption & Navigation Box -->
+    <div id="tour-caption-box" class="tour-caption-box">
+      <div class="tour-caption-content">
+        <div class="tour-caption-main">
+          <div class="tour-chapter-label" id="tour-chapter-label">CHAPTER 1: MEET THE CITY</div>
+          <p id="tour-caption-text" class="tour-caption-text">Welcome to Clarity City.</p>
+          <div id="tour-step-interactive-container" class="tour-step-interactive-container"></div>
+        </div>
+        <div class="tour-nav-buttons">
+          <button id="btn-tour-prev" class="tour-btn tour-btn-secondary">← Back</button>
+          <button id="btn-tour-next" class="tour-btn tour-btn-primary">Next →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating Presenter Notes Panel (Toggled with 'N') -->
+    <div id="presenter-notes-panel" class="presenter-notes-panel hidden">
+      <div class="presenter-notes-header">
+        <span>PRESENTER NOTES (<kbd>N</kbd> to toggle)</span>
+        <button id="btn-close-presenter-notes" class="close-btn">&times;</button>
+      </div>
+      <div id="presenter-notes-text" class="presenter-notes-body">
+        Every city has thousands of assets like these. The first question is: do you even know what you have and what condition it's in?
+      </div>
+    </div>
+  </div>
+
+  <div id="app-root">
+    <!-- Top Operations Navbar -->
+    <header id="top-bar">
+      <div class="brand-section">
+        <h1 class="brand-title">CLARITY CITY</h1>
+      </div>
+
+      <!-- Strategy Toggle -->
+      <div class="top-strategy-group" role="group" aria-label="Strategy Switcher">
+        <button class="strategy-toggle-btn active" data-strategy="reactive">Reactive / Time-Based</button>
+        <button class="strategy-toggle-btn" data-strategy="predictive">Predictive / Condition-Based</button>
+        <button class="strategy-toggle-btn" data-strategy="compare">Compare</button>
+      </div>
+
+      <!-- Actions Group -->
+      <div class="top-actions-group">
+        <!-- Time of Day Switcher -->
+        <div class="time-of-day-group" role="group" aria-label="Time of Day">
+          <button class="tod-btn" data-tod="day">Day</button>
+          <button class="tod-btn active" data-tod="dusk">Dusk</button>
+          <button class="tod-btn" data-tod="night">Night</button>
+        </div>
+
+        <button id="btn-underground" class="control-btn" title="Toggle Underground Pipe View">Underground</button>
+        <div class="sound-control-group" style="display: flex; align-items: center; gap: 4px;">
+          <button id="btn-sound-toggle" class="control-btn" title="Toggle Alert Sound">Sound: Off</button>
+          <input type="range" id="sound-volume-slider" min="0" max="1" step="0.05" value="0.3" style="width: 45px; height: 4px;" title="Sound Volume">
+        </div>
+        <button id="btn-reset-view" class="control-btn" title="Reset Camera View">Reset View</button>
+        <button id="btn-new-city" class="control-btn" title="Regenerate Seed">New City</button>
+        <button id="btn-assumptions" class="control-btn" title="Edit Assumptions">Assumptions</button>
+        <button id="btn-recording-mode" class="control-btn" title="Toggle Recording Mode">Recording Mode</button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main id="main-workspace">
+      <!-- 3D City Viewport -->
+      <div id="viewport-wrapper" class="viewport-wrapper">
+        <div id="three-canvas-container"></div>
+
+        <!-- Compare Mode Scoreboard Overlay Banner -->
+        <div id="compare-scoreboard-banner" class="hidden">
+          <div class="compare-col">
+            <span class="compare-title">Reactive / Time-Based City</span>
+            <span id="compare-reactive-cost" class="compare-cost" style="color: var(--status-failed)">$0</span>
+            <span id="compare-reactive-failures" class="compare-stats">0 failures</span>
+            <span id="compare-reactive-health" class="compare-stats">Health: 100%</span>
+          </div>
+
+          <div class="compare-divider"></div>
+
+          <div class="compare-col">
+            <span class="compare-title">Predictive / Condition-Based City</span>
+            <span id="compare-predictive-cost" class="compare-cost" style="color: var(--accent-color)">$0</span>
+            <span id="compare-predictive-failures" class="compare-stats">0 failures</span>
+            <span id="compare-predictive-health" class="compare-stats">Health: 100%</span>
+          </div>
+
+          <div class="compare-divider"></div>
+
+          <div id="compare-diff-badge">Predictive saves $0</div>
+        </div>
+
+        <!-- Floating Asset Inspector Card -->
+        <div id="asset-inspector" class="hidden">
+          <div class="inspector-header">
+            <div>
+              <span id="inspector-asset-id" class="inspector-title">AST-0001</span>
+              <span id="inspector-status-badge" class="status-badge status-healthy">HEALTHY</span>
+            </div>
+            <button id="inspector-close-btn" class="close-btn" aria-label="Close Inspector">&times;</button>
+          </div>
+          <div class="inspector-grid">
+            <div class="metric-item">
+              <span class="metric-label">Type</span>
+              <span id="inspector-asset-type" class="metric-value">PUMP STATION</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Location</span>
+              <span id="inspector-location" class="metric-value">Harbour St</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Age</span>
+              <span id="inspector-age" class="metric-value">12.4 yrs</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Lifespan</span>
+              <span id="inspector-expected-life" class="metric-value">25 yrs</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Current Health</span>
+              <span id="inspector-current-health" class="metric-value" style="color: var(--status-healthy)">88%</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Failures</span>
+              <span id="inspector-failures" class="metric-value">0</span>
+            </div>
+            <div class="metric-item full-width">
+              <span class="metric-label">Cost Incurred to Date</span>
+              <span id="inspector-cost" class="metric-value">$0</span>
+            </div>
+          </div>
+          <div style="margin-top: 10px;">
+            <span class="metric-label">Health Trajectory</span>
+            <div id="inspector-sparkline" style="margin-top: 4px;"></div>
+          </div>
+          <div style="margin-top: 10px;">
+            <span class="metric-label">Recent Maintenance History</span>
+            <div id="inspector-work-history" style="margin-top: 4px; font-family: var(--font-mono); font-size: 11px; max-height: 80px; overflow-y: auto;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Side Dashboard Panel -->
+      <aside id="side-panel">
+        <!-- City Health Index & Active Incidents Badge -->
+        <div class="panel-card">
+          <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
+            <span title="Criticality-weighted average asset condition weighted by replacement value">City Health Index</span>
+            <span id="active-incidents-badge" class="badge badge-emergency">0 Active Incidents</span>
+          </div>
+          <div class="health-index-block" title="Criticality-weighted average asset condition weighted by replacement value">
+            <div id="metric-health-index" class="health-number">100</div>
+            <div id="metric-health-label" class="health-scale-text">Clarity (Optimal)</div>
+          </div>
+          <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px; font-family: var(--font-condensed);">Weighted by asset replacement value</div>
+        </div>
+
+        <!-- Primary Financial & Operational Metrics -->
+        <div class="panel-card">
+          <div class="card-title">Operations Scoreboard</div>
+          <div class="metrics-grid">
+            <div class="metric-item full-width">
+              <span class="metric-label">Total Expenditure to Date</span>
+              <span id="metric-total-cost" class="metric-value highlight">$0</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Physical Failures</span>
+              <span id="metric-failures" class="metric-value">0</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Service Downtime</span>
+              <span id="metric-downtime" class="metric-value">0 hrs</span>
+            </div>
+            <div class="metric-item full-width">
+              <span class="metric-label">Resident Disruption</span>
+              <span id="metric-disruption" class="metric-value">0 resident-hrs</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Work Order Distribution -->
+        <div class="panel-card">
+          <div class="card-title">Work Order Ratio</div>
+          <div class="ratio-bar-container">
+            <div id="ratio-bar-planned" class="ratio-fill-planned" style="width: 50%"></div>
+            <div id="ratio-bar-emergency" class="ratio-fill-emergency" style="width: 50%"></div>
+          </div>
+          <div class="ratio-labels">
+            <span id="ratio-label-planned">Planned: 0 (0%)</span>
+            <span id="ratio-label-emergency">Emergency: 0 (0%)</span>
+          </div>
+        </div>
+
+        <!-- Cumulative Cost Trajectory Curve -->
+        <div class="panel-card">
+          <div class="card-title">Cumulative Cost Trajectory (20 Yrs)</div>
+          <div class="chart-wrapper">
+            <canvas id="trajectory-canvas"></canvas>
+          </div>
+          <div style="display: flex; gap: 12px; margin-top: 6px; font-family: var(--font-mono); font-size: 10px;">
+            <span style="color: var(--status-failed)">• Reactive</span>
+            <span style="color: var(--accent-color)">• Predictive</span>
+          </div>
+        </div>
+
+        <!-- Operations Event Feed -->
+        <div class="panel-card" style="flex: 1; border-bottom: none;">
+          <div class="card-title">Operations Log</div>
+          <div id="event-feed-list" class="event-feed-list"></div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Bottom Timeline Bar -->
+    <footer id="bottom-bar">
+      <div class="playback-controls">
+        <button id="btn-play" class="play-btn" aria-label="Play">▶</button>
+        <div class="speed-group">
+          <button class="speed-btn" data-speed="0.5">0.5x</button>
+          <button class="speed-btn active" data-speed="1">1x</button>
+          <button class="speed-btn" data-speed="2">2x</button>
+          <button class="speed-btn" data-speed="4">4x</button>
+        </div>
+      </div>
+
+      <div class="timeline-slider-container">
+        <div class="timeline-info">
+          <span id="timeline-current-time">Year 1, Jan</span>
+          <span>Timeline (20 Years / 240 Months)</span>
+        </div>
+        <div class="slider-track-wrap">
+          <div id="timeline-progress-fill" class="timeline-progress-fill" style="width: 0%"></div>
+          <input type="range" id="timeline-slider" min="0" max="239" value="0" step="1">
+        </div>
+      </div>
+    </footer>
+
+    <!-- Small Footer Stamp -->
+    <div id="footer-stamp">
+      Concept demo. Fictional city and data. Built by Shahmeer Hashmi.
+    </div>
+  </div>
+
+  <!-- Summary Modal (Year 20) -->
+  <div id="summary-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 class="modal-title">20-YEAR LIFECYCLE SUMMARY</h2>
+        <button id="summary-close-btn" class="close-btn">&times;</button>
+      </div>
+      <div class="savings-highlight-card">
+        <div id="summary-savings-dollars" class="savings-highlight-num">$0</div>
+        <div id="summary-savings-percent" class="savings-highlight-sub">0% Net Savings</div>
+      </div>
+      <table class="summary-table">
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Reactive / Time-Based Strategy</th>
+            <th>Predictive / Condition-Based Strategy</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Total 20-Year Expenditure</td>
+            <td id="summary-reactive-cost" style="color: var(--status-failed)">$0</td>
+            <td id="summary-predictive-cost" style="color: var(--accent-color)">$0</td>
+          </tr>
+          <tr>
+            <td>Total Failures Incurred</td>
+            <td id="summary-reactive-failures">0</td>
+            <td id="summary-predictive-failures">0</td>
+          </tr>
+          <tr>
+            <td>Service Downtime</td>
+            <td id="summary-reactive-downtime">0 hrs</td>
+            <td id="summary-predictive-downtime">0 hrs</td>
+          </tr>
+          <tr>
+            <td>Failures Prevented</td>
+            <td colspan="2" id="summary-failures-avoided" style="color: var(--status-healthy); font-weight: bold;">0</td>
+          </tr>
+          <tr>
+            <td>Downtime Avoided</td>
+            <td colspan="2" id="summary-downtime-avoided" style="color: var(--status-healthy); font-weight: bold;">0 hrs</td>
+          </tr>
+          <tr>
+            <td>Resident Disruption Avoided</td>
+            <td colspan="2" id="summary-disruption-avoided" style="color: var(--status-healthy); font-weight: bold;">0 resident-hrs</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 16px; font-style: italic;">
+        Illustrative model. Default assumptions are editable. Illustrative simulation with a fictional city and fictional data.
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button id="btn-export-summary" class="control-btn" style="background-color: var(--accent-color); color: #FFF; font-weight: 600;">Save as Image (LinkedIn 1200x1200)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Assumptions Modal -->
+  <div id="assumptions-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 class="modal-title">SIMULATION ASSUMPTIONS</h2>
+        <button id="assumptions-close-btn" class="close-btn">&times;</button>
+      </div>
+      <div style="font-size: 12px; margin-bottom: 14px; color: var(--text-muted);">
+        Adjust physical asset lifecycle costs, expected lifespans, and predictive program parameters.
+      </div>
+      <div id="assumptions-form-container"></div>
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
+        <button id="btn-reset-assumptions" class="control-btn">Reset to Defaults</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Entry Script -->
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
