@@ -1,6 +1,6 @@
 // assumptions-form.js - Expanded assumptions panel with city scale, live break metrics, and per-asset sections
 
-import { DEFAULT_ASSUMPTIONS, CITY_CONFIG } from './config.js';
+import { DEFAULT_ASSUMPTIONS, CITY_CONFIG, SENSOR_QUALITY, CRITICALITY_LABELS } from './config.js';
 
 export function renderAssumptionsForm(container, currentAssumptions, liveMetrics, onSaveCallback) {
   if (!container) return;
@@ -56,8 +56,12 @@ export function renderAssumptionsForm(container, currentAssumptions, liveMetrics
             <input type="number" name="${def.key}_residents" value="${data.residentsAffected}" step="10">
           </div>
           <div class="form-row-compact">
-            <label>Sensor Catch Rate (%):</label>
-            <input type="number" name="${def.key}_catchRate" value="${catchRatePct}" min="0" max="100" step="1">
+            <label>Sensor Coverage (%):</label>
+            <input type="number" name="${def.key}_catchRate" value="${catchRatePct}" min="0" max="100" step="5">
+          </div>
+          <div class="form-row-compact">
+            <label>Criticality:</label>
+            <select name="${def.key}_criticality">${[1, 2, 3, 4, 5].map((c) => `<option value="${c}" ${(data.criticality ?? 3) === c ? 'selected' : ''}>${c} · ${CRITICALITY_LABELS[c]}</option>`).join('')}</select>
           </div>
         </div>
       </div>
@@ -102,7 +106,32 @@ export function renderAssumptionsForm(container, currentAssumptions, liveMetrics
             <label>Annual Program Overhead ($):</label>
             <input type="number" name="annualProgramCost" min="0" max="2000000" step="10000" value="${a.predictive.annualProgramCost}">
           </div>
+          <div class="form-row-compact">
+            <label>Alert Policy:</label>
+            <select name="alertPolicy">
+              <option value="risk" ${(a.predictive.alertPolicy || 'risk') === 'risk' ? 'selected' : ''}>Weighted by criticality</option>
+              <option value="uniform" ${a.predictive.alertPolicy === 'uniform' ? 'selected' : ''}>Same threshold for every asset</option>
+            </select>
+          </div>
+          <div class="form-row-compact">
+            <label>Sensor Quality:</label>
+            <select name="sensorNoise">${SENSOR_QUALITY.map((q) => `<option value="${q.noise}" ${(a.predictive.sensorNoise ?? 6) === q.noise ? 'selected' : ''}>${q.label}</option>`).join('')}</select>
+          </div>
+          <div class="form-row-compact">
+            <label>False Alarm Visit Cost (% of PM):</label>
+            <input type="number" name="inspectionCostPct" min="0" max="100" step="5" value="${Math.round((a.predictive.inspectionCostPct ?? 0.2) * 100)}">
+          </div>
+          <div class="form-row-compact">
+            <label>Cost Level:</label>
+            <select name="costLevel">
+              <option value="1">Keep current costs</option>
+              <option value="0.8">Lower-cost region (−20%)</option>
+              <option value="1.25">High-cost region (+25%)</option>
+              <option value="1.06">Add a year of inflation (+6%)</option>
+            </select>
+          </div>
         </div>
+        <div class="form-hint">Weighted by criticality: each level above or below Moderate moves an asset's alert threshold by ${a.predictive.criticalityStep ?? 8} points, and crews work the riskiest alerts first. Water mains include trunk mains (City-critical) and local mains.</div>
       </div>
 
       <!-- Asset Sections -->
@@ -143,6 +172,10 @@ export function renderAssumptionsForm(container, currentAssumptions, liveMetrics
     updated.predictive.healthThreshold = parseFloat(fd.get('healthThreshold'));
     updated.predictive.crewCapacityPerMonth = parseInt(fd.get('crewCapacity'), 10);
     updated.predictive.annualProgramCost = parseFloat(fd.get('annualProgramCost'));
+    updated.predictive.alertPolicy = fd.get('alertPolicy') || 'risk';
+    updated.predictive.sensorNoise = parseFloat(fd.get('sensorNoise'));
+    updated.predictive.inspectionCostPct = parseFloat(fd.get('inspectionCostPct')) / 100;
+    const costLevel = parseFloat(fd.get('costLevel')) || 1;
 
     for (const def of assetTypes) {
       updated[def.key].plannedCost = parseFloat(fd.get(`${def.key}_plannedCost`));
@@ -153,6 +186,14 @@ export function renderAssumptionsForm(container, currentAssumptions, liveMetrics
       updated[def.key].emergencyDowntimeHours = parseFloat(fd.get(`${def.key}_emergencyDowntime`));
       updated[def.key].residentsAffected = parseFloat(fd.get(`${def.key}_residents`));
       updated[def.key].catchRate = parseFloat(fd.get(`${def.key}_catchRate`)) / 100;
+      updated[def.key].criticality = parseInt(fd.get(`${def.key}_criticality`), 10);
+      if (costLevel !== 1) {
+        // Round to sensible amounts so the numbers stay readable
+        const r = (v) => { const x = v * costLevel; const step = x >= 100000 ? 5000 : x >= 10000 ? 500 : 50; return Math.round(x / step) * step; };
+        updated[def.key].plannedCost = r(updated[def.key].plannedCost);
+        updated[def.key].emergencyCost = r(updated[def.key].emergencyCost);
+        updated[def.key].replacementCost = r(updated[def.key].replacementCost);
+      }
     }
 
     onSaveCallback(updated);

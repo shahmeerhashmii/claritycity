@@ -60,10 +60,20 @@ export const COLORS = {
   }
 };
 
+// Sensor quality options shown in the Assumptions panel (reading error in health points)
+export const SENSOR_QUALITY = [
+  { id: 'basic', label: 'Basic (±10)', noise: 10 },
+  { id: 'standard', label: 'Standard (±6)', noise: 6 },
+  { id: 'advanced', label: 'Advanced (±3)', noise: 3 }
+];
+
+export const CRITICALITY_LABELS = { 1: 'Low', 2: 'Minor', 3: 'Moderate', 4: 'High', 5: 'City-critical' };
+
 export const DEFAULT_ASSUMPTIONS = {
   // Asset assumptions with realistic emergency-to-planned ratios, specific catch rates, and asset-specific replacement costs
   pumpStation: {
     displayName: 'Pump Stations',
+    criticality: 5, // 1 (nuisance) to 5 (city-critical): drives alert thresholds and job priority
     count: 12,
     expectedLifeYears: 25,
     plannedCost: 40000,
@@ -79,6 +89,7 @@ export const DEFAULT_ASSUMPTIONS = {
   },
   waterMain: {
     displayName: 'Water Mains (300 miles)',
+    criticality: 4, // 1 (nuisance) to 5 (city-critical): drives alert thresholds and job priority
     count: 300,
     expectedLifeYears: 60,
     plannedCost: 11000,
@@ -94,6 +105,7 @@ export const DEFAULT_ASSUMPTIONS = {
   },
   bridge: {
     displayName: 'River Bridges',
+    criticality: 5, // 1 (nuisance) to 5 (city-critical): drives alert thresholds and job priority
     count: 6,
     expectedLifeYears: 75,
     plannedCost: 280000,
@@ -109,6 +121,7 @@ export const DEFAULT_ASSUMPTIONS = {
   },
   streetlight: {
     displayName: 'Streetlights',
+    criticality: 1, // 1 (nuisance) to 5 (city-critical): drives alert thresholds and job priority
     count: 400,
     expectedLifeYears: 20,
     plannedCost: 750,
@@ -124,6 +137,7 @@ export const DEFAULT_ASSUMPTIONS = {
   },
   trafficSignal: {
     displayName: 'Traffic Signals',
+    criticality: 3, // 1 (nuisance) to 5 (city-critical): drives alert thresholds and job priority
     count: 40,
     expectedLifeYears: 25,
     plannedCost: 7000,
@@ -145,7 +159,12 @@ export const DEFAULT_ASSUMPTIONS = {
   predictive: {
     healthThreshold: 45, // Proactive maintenance threshold
     annualProgramCost: 350000, // Fixed sensor, software, and staff cost
-    crewCapacityPerMonth: 25 // Max planned jobs per month
+    crewCapacityPerMonth: 25, // Max planned jobs per month
+    // Alerting (v2): how early warnings become work orders
+    alertPolicy: 'risk', // 'risk' = thresholds and priority weighted by asset criticality; 'uniform' = one threshold for every asset
+    criticalityStep: 8, // Each criticality level above/below 3 moves the alert threshold by this many health points
+    sensorNoise: 6, // Typical sensor reading error, in health points (Basic 10, Standard 6, Advanced 3)
+    inspectionCostPct: 0.2 // A false alarm still costs a site visit: this share of the planned maintenance cost
   }
 };
 

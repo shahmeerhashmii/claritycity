@@ -114,6 +114,22 @@ export const TOUR_STEPS = [
     interactiveType: 'pump-telemetry'
   },
 
+  // CHAPTER 5 (cont.): Alerts people trust
+  {
+    chapterNumber: 5,
+    chapterTitle: "See It Coming",
+    stepTitle: "Alert Thresholds & Prioritization",
+    caption: "Not every early warning deserves a truck. Critical assets like trunk water mains and bridges alert earlier and get crews first. A flickering streetlight waits its turn. Fewer false alarms, fewer critical failures.",
+    presenterNote: "An alert nobody trusts is just noise with extra steps. Show the Alerts & Priorities panel and flip between 'Weighted by criticality' and 'Same for every asset' to compare critical-asset failures and false alarms.",
+    cameraPos: new THREE.Vector3(10, 130, 130),
+    cameraTarget: new THREE.Vector3(0, 0, 10),
+    strategy: 'predictive',
+    startMonth: 96,
+    endMonth: 120,
+    speed: 2,
+    underground: false
+  },
+
   // CHAPTER 6: Right Crew, Right Job, Right Time
   {
     chapterNumber: 6,
