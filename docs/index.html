@@ -150,6 +150,22 @@
       <div id="viewport-wrapper" class="viewport-wrapper">
         <div id="three-canvas-container"></div>
 
+        <!-- Navigation helpers (v2) -->
+        <div id="view-presets" class="view-presets" role="group" aria-label="Camera views">
+          <button type="button" class="view-preset-btn" data-view="overview" title="Whole city (1)">Overview</button>
+          <button type="button" class="view-preset-btn" data-view="top" title="Map view from above (2)">Top-down</button>
+          <button type="button" class="view-preset-btn" data-view="river" title="River and bridges (3)">River &amp; Bridges</button>
+          <button type="button" class="view-preset-btn" data-view="street" title="Street level (4)">Street Level</button>
+        </div>
+        <div id="status-legend" class="status-legend" aria-label="Asset status colours">
+          <span><i style="background: var(--status-healthy)"></i>Healthy</span>
+          <span><i style="background: var(--status-degrading)"></i>Degrading</span>
+          <span><i style="background: var(--status-critical)"></i>Critical</span>
+          <span><i style="background: var(--status-failed)"></i>Failed</span>
+          <span><i style="background: var(--accent-color)"></i>Crew on site</span>
+          <span class="legend-hint">Drag to orbit · Scroll to zoom · Click an asset for details · Keys 1 to 4 switch views</span>
+        </div>
+
         <!-- Compare Mode Scoreboard Overlay Banner -->
         <div id="compare-scoreboard-banner" class="hidden">
           <div class="compare-col">
@@ -272,6 +288,26 @@
             <span id="ratio-label-planned">Planned: 0 (0%)</span>
             <span id="ratio-label-emergency">Emergency: 0 (0%)</span>
           </div>
+        </div>
+
+        <!-- Alerts & Priorities (v2) -->
+        <div class="panel-card" id="alerts-card">
+          <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Alerts &amp; Priorities</span>
+            <span id="alert-policy-chip" class="badge">Weighted by criticality</span>
+          </div>
+          <div id="alerts-reactive-note" class="alerts-note hidden">No condition monitoring in this strategy. Problems are found when they break.</div>
+          <div id="alerts-grid" class="metrics-grid">
+            <div class="metric-item"><span class="metric-label">Alerts Raised</span><span id="metric-alerts" class="metric-value">0</span></div>
+            <div class="metric-item"><span class="metric-label">False Alarms</span><span id="metric-false-alarms" class="metric-value">0</span></div>
+            <div class="metric-item"><span class="metric-label">Critical-Asset Failures</span><span id="metric-critical-failures" class="metric-value">0</span></div>
+            <div class="metric-item"><span class="metric-label">Waiting for a Crew</span><span id="metric-backlog" class="metric-value">0</span></div>
+          </div>
+          <div class="policy-toggle" role="group" aria-label="Alert policy">
+            <button type="button" class="policy-btn active" data-policy="risk" title="Critical assets alert earlier and get crews first">Weighted by criticality</button>
+            <button type="button" class="policy-btn" data-policy="uniform" title="Same alert threshold for every asset">Same for every asset</button>
+          </div>
+          <div class="alerts-explainer">A flickering streetlight and a failing water main shouldn't get the same response. Switch policies to see the trade-off.</div>
         </div>
 
         <!-- Cumulative Cost Trajectory Curve -->

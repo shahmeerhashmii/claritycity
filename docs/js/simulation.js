@@ -38,6 +38,8 @@ export class SimulationEngine {
   // Generate initial static asset list with deterministic locations & install ages
   generateAssets() {
     const rng = createPRNG(this.seed);
+    // Separate generator for criticality so adding it doesn't change the city's install ages
+    const critRng = createPRNG(this.seed + 777);
     const assets = [];
     let idCounter = 1;
 
@@ -64,9 +66,19 @@ export class SimulationEngine {
         const ageRatio = installAgeYears / def.expectedLifeYears;
         let initialHealth = Math.max(10, Math.min(100, 100 * (1 - Math.pow(ageRatio, 2.0)) + (rng() * 10 - 5)));
         
+        // Criticality: the type's level, with a share of each type more important than the rest
+        // (trunk water mains, signals at major intersections, lights on arterial roads)
+        let criticality = def.criticality ?? 3;
+        const r = critRng();
+        if (group.type === 'waterMain' && r < 0.25) criticality = 5;
+        else if (group.type === 'waterMain' && r > 0.75) criticality = 3;
+        else if (group.type === 'trafficSignal' && r < 0.25) criticality = 4;
+        else if (group.type === 'streetlight' && r < 0.15) criticality = 2;
+
         assets.push({
           id: assetId,
           type: group.type,
+          criticality,
           index: assets.length,
           typeIndex: i,
           street: street,
@@ -110,6 +122,7 @@ export class SimulationEngine {
       totalFailures: 0,
       status: a.initialHealth <= 0 ? 'failed' : (a.initialHealth < 40 ? 'critical' : (a.initialHealth < 70 ? 'degrading' : 'healthy')),
       maintenanceRemainingMonths: 0,
+      lastAlertMonth: -999,
       history: []
     }));
 
@@ -122,6 +135,19 @@ export class SimulationEngine {
     let cumulativeEmergencyWork = 0;
     let cumulativePlannedReplacements = 0;
     let cumulativeEmergencyReplacements = 0;
+
+    // Alerting stats (predictive only, except critical failures which both strategies track)
+    let cumulativeAlerts = 0;
+    let cumulativeAlertsActioned = 0;
+    let cumulativeFalseAlarms = 0;
+    let cumulativeMissedFailures = 0;
+    let cumulativeCriticalFailures = 0;
+    let alertBacklog = 0;
+    const gauss = () => {
+      // Box-Muller on the seeded generator
+      const u = Math.max(1e-9, rng()), v = rng();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    };
 
     let waterMainBreaksYear1to5 = 0;
     let totalWaterMainBreaks = 0;
@@ -267,17 +293,38 @@ export class SimulationEngine {
         : (this.assumptions.predictive?.crewCapacityPerMonth ?? 25);
 
       if (isPredictive) {
-        // Predictive (Condition-Based): Health threshold trigger
-        const threshold = this.assumptions.predictive.healthThreshold;
+        // Predictive (Condition-Based): sensors read each asset's health with some error.
+        // An alert fires when the reading drops below the asset's threshold. Under the 'risk'
+        // policy, critical assets alert earlier and minor ones later, and the crew works the
+        // riskiest alerts first. Under 'uniform', every asset shares one threshold and the
+        // crew works alerts in order of lowest reading.
+        const p = this.assumptions.predictive;
+        const policy = p.alertPolicy || 'risk';
+        const step = p.criticalityStep ?? 8;
+        const noise = p.sensorNoise ?? 6;
+        const baseThreshold = p.healthThreshold;
         const candidates = [];
         for (let i = 0; i < assetStates.length; i++) {
           const state = assetStates[i];
-          if (state.status !== 'failed' && state.health <= threshold && state.maintenanceRemainingMonths === 0) {
-            candidates.push({ index: i, score: state.health });
+          if (state.status === 'failed' || state.maintenanceRemainingMonths > 0) continue;
+          const config = this.assumptions[state.type];
+          const catchRate = config.catchRate !== undefined ? config.catchRate : 0.75;
+          if (rng() > catchRate) continue; // no usable reading this month (coverage gap)
+          const crit = this.assets[i].criticality ?? 3;
+          const threshold = policy === 'risk'
+            ? Math.max(10, Math.min(90, baseThreshold + (crit - 3) * step))
+            : baseThreshold;
+          const reading = state.health + gauss() * noise;
+          if (reading <= threshold) {
+            cumulativeAlerts++;
+            state.lastAlertMonth = month;
+            const urgency = policy === 'risk' ? crit * (threshold - reading + 10) : (100 - reading);
+            candidates.push({ index: i, urgency, threshold, crit });
           }
         }
 
-        candidates.sort((a, b) => a.score - b.score);
+        candidates.sort((a, b) => b.urgency - a.urgency);
+        alertBacklog = Math.max(0, candidates.length - crewLimit);
 
         for (const candidate of candidates) {
           if (plannedJobsThisMonth >= crewLimit) break;
@@ -285,10 +332,28 @@ export class SimulationEngine {
           const state = assetStates[candidate.index];
           const assetDef = this.assets[candidate.index];
           const config = this.assumptions[state.type];
-          const catchRate = config.catchRate !== undefined ? config.catchRate : 0.75;
+          plannedJobsThisMonth++;
+          cumulativeAlertsActioned++;
 
-          if (rng() <= catchRate) {
-            plannedJobsThisMonth++;
+          // False alarm: the crew arrives and the asset is actually fine
+          if (state.health > candidate.threshold + 10) {
+            cumulativeFalseAlarms++;
+            const cost = Math.round(config.plannedCost * (p.inspectionCostPct ?? 0.2));
+            cumulativeCost += cost;
+            state.totalCostToDate += cost;
+            if (rng() < 0.03) {
+              const logEntry = {
+                month, year: currentYear, monthInYear, type: 'planned', assetId: state.id, assetType: state.type,
+                street: assetDef.street, cost, downtimeHours: 0, residentsAffected: 0, isFalseAlarm: true,
+                healthBefore: Math.round(state.health), healthAfter: Math.round(state.health), notable: false
+              };
+              state.history.push(logEntry);
+              monthEvents.push(logEntry);
+            }
+            continue;
+          }
+
+          {
             cumulativePlannedWork++;
             const cost = config.plannedCost;
             const downtime = config.plannedDowntimeHours;
@@ -319,6 +384,7 @@ export class SimulationEngine {
               cost,
               downtimeHours: downtime,
               residentsAffected: config.residentsAffected,
+              criticality: candidate.crit,
               healthBefore: Math.round(healthBefore),
               healthAfter: Math.round(state.health),
               notable: state.type === 'bridge' || state.type === 'pumpStation' || rng() < 0.08
@@ -430,6 +496,8 @@ export class SimulationEngine {
           state.totalFailures++;
           cumulativeFailures++;
           cumulativeEmergencyWork++;
+          if ((assetDef.criticality ?? 3) >= 4) cumulativeCriticalFailures++;
+          if (isPredictive && month - state.lastAlertMonth > 6) cumulativeMissedFailures++;
 
           if (state.type === 'waterMain') {
             totalWaterMainBreaks++;
@@ -523,6 +591,12 @@ export class SimulationEngine {
         cumulativeResidentDisruptionHours: Math.round(cumulativeResidentDisruptionHours),
         plannedWorkCount: cumulativePlannedWork,
         emergencyWorkCount: cumulativeEmergencyWork,
+        alertsRaised: cumulativeAlerts,
+        alertsActioned: cumulativeAlertsActioned,
+        falseAlarms: cumulativeFalseAlarms,
+        missedFailures: cumulativeMissedFailures,
+        criticalFailures: cumulativeCriticalFailures,
+        alertBacklog,
         events: monthEvents,
         assetStates: assetSnapshots
       });
@@ -542,7 +616,11 @@ export class SimulationEngine {
         totalWaterMainBreaks,
         waterMainBreaksYear1to5Avg: (waterMainBreaksYear1to5 / 5).toFixed(1),
         annualWaterMainBreaksAvg: (totalWaterMainBreaks / 20).toFixed(1),
-        bridgeEmergencyClosures
+        bridgeEmergencyClosures,
+        alertsRaised: cumulativeAlerts,
+        falseAlarms: cumulativeFalseAlarms,
+        missedFailures: cumulativeMissedFailures,
+        criticalFailures: cumulativeCriticalFailures
       }
     };
   }

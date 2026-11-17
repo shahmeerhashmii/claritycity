@@ -127,6 +127,7 @@ class App {
         }
       }
     });
+    this.setupV2Controls();
 
     this.initAssumptionsUI();
 
@@ -157,6 +158,64 @@ class App {
     if (this.currentMonth === 239 && !this.isPlaying) {
       this.ui.showSummary(this.precomputed.reactive.finalTotals, this.precomputed.predictive.finalTotals);
     }
+  }
+
+  // ---------- v2: alerts panel, alert policy and camera views ----------
+  updateAlertsPanel(reactiveSnap, predictiveSnap) {
+    const card = document.getElementById('alerts-card');
+    if (!card || !predictiveSnap) return;
+    const reactiveOnly = this.currentStrategy === 'reactive';
+    card.classList.toggle('reactive', reactiveOnly);
+    document.getElementById('alerts-reactive-note')?.classList.toggle('hidden', !reactiveOnly);
+    const fmt = (n) => (n || 0).toLocaleString();
+    const acted = predictiveSnap.alertsActioned || 0;
+    const falsePct = acted ? Math.round((predictiveSnap.falseAlarms / acted) * 100) : 0;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('metric-alerts', fmt(predictiveSnap.alertsRaised));
+    set('metric-false-alarms', `${fmt(predictiveSnap.falseAlarms)} (${falsePct}%)`);
+    set('metric-critical-failures', reactiveSnap
+      ? `${fmt(predictiveSnap.criticalFailures)} vs ${fmt(reactiveSnap.criticalFailures)}`
+      : fmt(predictiveSnap.criticalFailures));
+    set('metric-backlog', fmt(predictiveSnap.alertBacklog));
+    const policy = this.simulation.assumptions.predictive.alertPolicy || 'risk';
+    set('alert-policy-chip', policy === 'risk' ? 'Weighted by criticality' : 'Same for every asset');
+    document.querySelectorAll('.policy-btn').forEach((b) => b.classList.toggle('active', b.dataset.policy === policy));
+  }
+
+  setAlertPolicy(policy) {
+    const a = JSON.parse(JSON.stringify(this.simulation.assumptions));
+    if (a.predictive.alertPolicy === policy) return;
+    a.predictive.alertPolicy = policy;
+    this.simulation.setAssumptions(a);
+    this.precomputed = this.simulation.precomputed;
+    this.costChart.setData(this.precomputed.reactive.snapshots, this.precomputed.predictive.snapshots);
+    this.updateEventFeed();
+    this.updateState();
+    this.initAssumptionsUI();
+  }
+
+  setCameraView(view) {
+    const V = THREE.Vector3;
+    const views = {
+      overview: () => this.sceneManager.resetView(),
+      top: () => this.sceneManager.flyTo(new V(0, 0, 0), new V(0, 300, 1), 1.0),
+      river: () => this.sceneManager.flyTo(new V(0, 0, 10), new V(10, 120, 120), 1.0),
+      street: () => this.sceneManager.flyTo(new V(-18, 2, -18), new V(-32, 9, -40), 1.2)
+    };
+    (views[view] || views.overview)();
+    document.querySelectorAll('.view-preset-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+  }
+
+  setupV2Controls() {
+    document.querySelectorAll('.policy-btn').forEach((b) => b.addEventListener('click', () => this.setAlertPolicy(b.dataset.policy)));
+    document.querySelectorAll('.view-preset-btn').forEach((b) => b.addEventListener('click', () => this.setCameraView(b.dataset.view)));
+    const order = ['overview', 'top', 'river', 'street'];
+    window.addEventListener('keydown', (e) => {
+      if (e.target.closest && e.target.closest('input, textarea, select')) return;
+      if (document.body.classList.contains('in-guided-tour')) return;
+      const i = ['1', '2', '3', '4'].indexOf(e.key);
+      if (i >= 0) this.setCameraView(order[i]);
+    });
   }
 
   setStrategy(strategy) {
@@ -199,6 +258,8 @@ class App {
       if (this.incidentVFX_A) this.incidentVFX_A.syncActiveIncidents(reactiveSnap, this.masterAssets);
       if (this.incidentVFX_B) this.incidentVFX_B.syncActiveIncidents(predictiveSnap, this.masterAssets);
     }
+
+    this.updateAlertsPanel(reactiveSnap, predictiveSnap);
 
     // Active incidents counter
     const activeEmergencies = (activeSnap.assetStates || []).filter(s => s.status === 'failed').length;
