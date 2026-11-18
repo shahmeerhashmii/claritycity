@@ -1,7 +1,7 @@
 // asset-renderer.js - InstancedMesh rendering, health colors, pulse animations, streetlight illumination pools, and glowing underground water network
 
 import * as THREE from 'three';
-import { CITY_CONFIG, COLORS } from './config.js';
+import { CITY_CONFIG, COLORS, streetGrid } from './config.js';
 import { createPRNG } from './simulation.js';
 import { mergeParts, box, cyl } from './geo-utils.js';
 
@@ -157,29 +157,22 @@ export class AssetRenderer {
     const { gridSize, blockSize, streetWidth, riverWidth, riverBlockIndex } = CITY_CONFIG;
     const totalSpan = gridSize * blockSize + (gridSize - 1) * streetWidth + riverWidth;
     const halfSpan = totalSpan / 2;
-    const riverZPos = (riverBlockIndex - gridSize / 2) * (blockSize + streetWidth) + riverWidth / 2;
+    const SG = streetGrid();
+    const riverZPos = SG.riverZ;
 
+    // v4: intersections are where the real streets cross
     const intersections = [];
-    for (let gx = 0; gx <= gridSize; gx++) {
-      const x = -halfSpan + gx * (blockSize + streetWidth);
-      for (let gz = 0; gz <= gridSize; gz++) {
-        let z = -halfSpan + gz * (blockSize + streetWidth);
-        if (gz >= riverBlockIndex) z += riverWidth;
-        intersections.push({ x, z, gx, gz });
-      }
-    }
+    SG.xs.forEach((x, gx) => SG.zs.forEach((z, gz) => intersections.push({ x, z, gx, gz })));
+    // spread the 40 signals across the grid instead of bunching them on the first streets
+    intersections.sort((a, b) => ((a.gx * 7 + a.gz * 3) % 9) - ((b.gx * 7 + b.gz * 3) % 9) || a.gx - b.gx || a.gz - b.gz);
 
-    // 1. Bridges
-    const bridgeXCoords = [];
-    for (let gx = 1; gx < gridSize; gx++) {
-      const x = -halfSpan + gx * (blockSize + streetWidth);
-      bridgeXCoords.push(x);
-    }
+    // 1. Bridges: one on each bridged north-south street, spanning the river
+    const bridgeXCoords = SG.bridgeKs.map((k) => SG.xs[k]);
 
     for (let i = 0; i < 6; i++) {
       const x = bridgeXCoords[i % bridgeXCoords.length];
       const z = riverZPos;
-      this.dummy.position.set(x, 0.4, z);
+      this.dummy.position.set(x, -1.25, z); // deck top sits just above street level so cars drive across it
       this.dummy.rotation.set(0, 0, 0);
       this.dummy.scale.set(1, 1, 1);
       this.dummy.updateMatrix();
@@ -189,20 +182,21 @@ export class AssetRenderer {
         id: `BRI-${String(i + 1).padStart(4, '0')}`,
         type: 'bridge',
         instanceIndex: i,
-        position: new THREE.Vector3(x, 1.2, z)
+        position: new THREE.Vector3(x, 1.2, z),
+        street: `Bridge ${i + 1}`
       });
     }
     this.instancedMeshes.bridge.instanceMatrix.needsUpdate = true;
 
     // 2. Pump Stations
     const pumpLocations = [
-      { x: -halfSpan + 1 * (blockSize + streetWidth) + 6, z: riverZPos - 14 },
-      { x: -halfSpan + 3 * (blockSize + streetWidth) + 6, z: riverZPos - 14 },
-      { x: -halfSpan + 5 * (blockSize + streetWidth) + 6, z: riverZPos - 14 },
-      { x: -halfSpan + 7 * (blockSize + streetWidth) + 6, z: riverZPos - 14 },
-      { x: -halfSpan + 2 * (blockSize + streetWidth) + 6, z: riverZPos + 14 },
-      { x: -halfSpan + 4 * (blockSize + streetWidth) + 6, z: riverZPos + 14 },
-      { x: -halfSpan + 6 * (blockSize + streetWidth) + 6, z: riverZPos + 14 },
+      { x: -halfSpan + 1 * (blockSize + streetWidth) + 6, z: SG.riverMin - 12 },
+      { x: -halfSpan + 3 * (blockSize + streetWidth) + 6, z: SG.riverMin - 12 },
+      { x: -halfSpan + 5 * (blockSize + streetWidth) + 6, z: SG.riverMin - 12 },
+      { x: -halfSpan + 7 * (blockSize + streetWidth) + 6, z: SG.riverMin - 12 },
+      { x: -halfSpan + 2 * (blockSize + streetWidth) + 6, z: SG.riverMax + 10 },
+      { x: -halfSpan + 4 * (blockSize + streetWidth) + 6, z: SG.riverMax + 10 },
+      { x: -halfSpan + 6 * (blockSize + streetWidth) + 6, z: SG.riverMax + 10 },
       { x: halfSpan - 20, z: halfSpan - 20 },
       { x: halfSpan - 45, z: halfSpan - 20 },
       { x: -halfSpan + 25, z: -halfSpan + 25 },
@@ -230,8 +224,8 @@ export class AssetRenderer {
     // 3. Traffic Signals
     for (let i = 0; i < 40; i++) {
       const inter = intersections[i % intersections.length];
-      const offsetX = (rng() > 0.5 ? 1 : -1) * 3.5;
-      const offsetZ = (rng() > 0.5 ? 1 : -1) * 3.5;
+      const offsetX = (rng() > 0.5 ? 1 : -1) * (streetWidth / 2 + 1.2);
+      const offsetZ = (rng() > 0.5 ? 1 : -1) * (streetWidth / 2 + 1.2);
       const x = inter.x + offsetX;
       const z = inter.z + offsetZ;
 
@@ -256,9 +250,10 @@ export class AssetRenderer {
     // 4. Streetlights
     let slIdx = 0;
     for (let gx = 0; gx <= gridSize && slIdx < 400; gx++) {
-      const x = -halfSpan + gx * (blockSize + streetWidth);
+      const x = SG.xs[gx];
       for (let step = 0; step < 16 && slIdx < 400; step++) {
-        const z = -halfSpan + (step / 16) * totalSpan;
+        let z = -halfSpan + (step / 16) * totalSpan;
+        if (z > SG.riverMin - 1 && z < SG.riverMax + 1) z = SG.riverMin - 2;
         const sideOffset = (slIdx % 2 === 0 ? 1 : -1) * (streetWidth / 2 + 0.6);
 
         this.dummy.position.set(x + sideOffset, 0.1, z);
@@ -289,8 +284,7 @@ export class AssetRenderer {
     // 5. Water Main Segments (Positioned at y = -0.5 so they are visible underground)
     let wmIdx = 0;
     for (let gz = 0; gz <= gridSize && wmIdx < 300; gz++) {
-      let z = -halfSpan + gz * (blockSize + streetWidth);
-      if (gz >= riverBlockIndex) z += riverWidth;
+      const z = SG.zs[gz];
       for (let step = 0; step < 12 && wmIdx < 300; step++) {
         const x = -halfSpan + (step / 12) * totalSpan;
 
