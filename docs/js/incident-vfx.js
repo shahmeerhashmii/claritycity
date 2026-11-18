@@ -340,14 +340,21 @@ export class IncidentVFXManager {
     }
   }
 
+  // v4: what each incident does to traffic (see TrafficSystem.update)
   getActiveEmergencyBlocks() {
-    return Array.from(this.activeIncidents.values())
-      .filter(i => i.isEmergency)
-      .map(i => ({
-        x: i.position.x,
-        z: i.position.z,
-        stopsTraffic: i.type === 'bridge' || i.type === 'waterMain'
-      }));
+    const out = [];
+    for (const i of this.activeIncidents.values()) {
+      const at = { x: i.position.x, z: i.position.z };
+      if (i.isEmergency) {
+        if (i.type === 'bridge') out.push({ kind: 'bridgeClosed', ...at });
+        else if (i.type === 'waterMain') out.push({ kind: 'roadClosed', ...at });
+        else if (i.type === 'trafficSignal') out.push({ kind: 'signalOut', ...at });
+        else if (i.type === 'pumpStation') out.push({ kind: 'roadWork', ...at });
+      } else if (i.type === 'bridge' || i.type === 'waterMain' || i.type === 'trafficSignal') {
+        out.push({ kind: 'roadWork', ...at }); // planned repair: a lane coned off, traffic slows
+      }
+    }
+    return out;
   }
 
   dispose() {

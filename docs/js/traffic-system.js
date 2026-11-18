@@ -1,7 +1,7 @@
 // traffic-system.js - Multi-type traffic simulator with detailed bodies, headlights, brake lights, turning, signals, and response vehicles
 
 import * as THREE from 'three';
-import { CITY_CONFIG } from './config.js';
+import { CITY_CONFIG, streetGrid } from './config.js';
 import { createPRNG } from './simulation.js';
 import { mergeParts, box, cyl } from './geo-utils.js';
 
@@ -83,18 +83,12 @@ export class TrafficSystem {
     this.brakeLightsMesh = new THREE.InstancedMesh(brakeBeamGeo, brakeMat, this.carCount);
     this.scene.add(this.brakeLightsMesh);
 
-    // Generate Road Tracks
-    this.xRoads = [];
-    for (let gx = 0; gx <= gridSize; gx++) {
-      this.xRoads.push(-halfSpan + gx * (blockSize + streetWidth));
-    }
-
-    this.zRoads = [];
-    for (let gz = 0; gz <= gridSize; gz++) {
-      let z = -halfSpan + gz * (blockSize + streetWidth);
-      if (gz >= riverBlockIndex) z += riverWidth;
-      this.zRoads.push(z);
-    }
+    // v4: cars drive only on the real streets (the gaps between blocks), in their own lane
+    this.SG = streetGrid();
+    this.xRoads = this.SG.xs;
+    this.zRoads = this.SG.zs;
+    this.bridged = new Set(this.SG.bridgeKs.map((k) => this.SG.xs[k]));
+    const ext = this.SG.extent;
 
     for (let i = 0; i < this.carCount; i++) {
       const isNorthSouth = rng() > 0.5;
@@ -111,9 +105,10 @@ export class TrafficSystem {
       let x, z;
       if (isNorthSouth) {
         x = roadX + laneOffset;
-        z = (rng() - 0.5) * totalSpan;
+        z = (rng() - 0.5) * 2 * ext;
+        if (z > this.SG.riverMin - 2 && z < this.SG.riverMax + 2) z = this.SG.riverMin - 4; // never start in the water
       } else {
-        x = (rng() - 0.5) * totalSpan;
+        x = -10 + (rng() - 0.5) * 2 * ext;
         z = roadZ + laneOffset;
       }
 
@@ -137,6 +132,7 @@ export class TrafficSystem {
         currentSpeed: speed,
         laneOffset,
         totalSpan,
+        stopTimer: 0,
         isBus,
         isEmergency,
         busStopTimer: 0,
@@ -149,67 +145,106 @@ export class TrafficSystem {
     }
   }
 
-  update(dt, incidentBlocks = []) {
-    const half = (CITY_CONFIG.gridSize * CITY_CONFIG.blockSize + (CITY_CONFIG.gridSize - 1) * CITY_CONFIG.streetWidth + CITY_CONFIG.riverWidth) / 2;
+  // v4: incidents are { kind, x, z }. kind is one of
+  //   'bridgeClosed'  bridge failed: nobody crosses, cars on that street turn back at the river, queue on the approach
+  //   'roadClosed'    water main burst under a street: lanes shut, cars turn back before it, cross traffic crawls
+  //   'signalOut'     signal dark: the intersection becomes an all-way stop, so queues build on every approach
+  //   'roadWork'      planned repair: one lane narrowed, everyone slows past it
+  uTurn(c) {
+    c.direction *= -1; c.laneOffset *= -1;
+    if (c.isNorthSouth) c.x = c.roadX + c.laneOffset; else c.z = c.roadZ + c.laneOffset;
+    c.currentSpeed *= 0.3; c.stopTimer = 0.6;
+  }
+
+  update(dt, incidents = []) {
+    const SG = this.SG, ext = SG.extent;
     const zeroScale = new THREE.Matrix4().makeScale(0, 0, 0);
+    // snap incidents to the street they sit on
+    const near = (v, arr) => arr.reduce((b, a) => (Math.abs(a - v) < Math.abs(b - v) ? a : b), arr[0]);
+    const inc = incidents.map((i) => ({ ...i, sx: near(i.x, SG.xs), sz: near(i.z, SG.zs) }));
+    const closedBridges = new Set(inc.filter((i) => i.kind === 'bridgeClosed').map((i) => i.sx));
 
     for (let i = 0; i < this.cars.length; i++) {
       const c = this.cars[i];
-
-      // 1. Bus Stop Pauses
-      if (c.isBus) {
-        if (c.busStopTimer > 0) {
-          c.busStopTimer -= dt;
-          c.currentSpeed = 0;
-          c.isBraking = true;
-        } else if (Math.random() < 0.001) {
-          c.busStopTimer = 3.0 + Math.random() * 2.0; // Stop for 3-5s
-        }
-      }
-
-      // 2. Proximity to incidents & emergency vehicle yield
       let targetSpeed = c.baseSpeed;
       c.isBraking = false;
 
-      for (const inc of incidentBlocks) {
-        const distSq = (c.x - inc.x) ** 2 + (c.z - inc.z) ** 2;
-        if (distSq < 196) {
-          targetSpeed = inc.stopsTraffic ? 0.0 : c.baseSpeed * 0.25;
-          c.isBraking = true;
-          break;
-        }
+      // 1. Bus stops
+      if (c.isBus) {
+        if (c.busStopTimer > 0) { c.busStopTimer -= dt; targetSpeed = 0; c.isBraking = true; }
+        else if (Math.random() < 0.001) c.busStopTimer = 3.0 + Math.random() * 2.0;
       }
 
-      // Safe following distance behind car ahead in same lane
+      // 2. Incidents
+      const pos = c.isNorthSouth ? c.z : c.x;           // position along my road
+      const myRoad = c.isNorthSouth ? c.roadX : c.roadZ;
+      for (const k of inc) {
+        if (k.kind === 'signalOut') {
+          // all-way stop: every car reaching this intersection stops, then creeps through
+          const ix = k.sx, iz = k.sz;
+          const onIt = c.isNorthSouth ? Math.abs(c.roadX - ix) < 1 : Math.abs(c.roadZ - iz) < 1;
+          if (!onIt) continue;
+          const ahead = ((c.isNorthSouth ? iz - c.z : ix - c.x) * c.direction);
+          if (ahead > 0 && ahead < 7) {
+            if (!c.stoppedAt || c.stoppedAt !== `${ix},${iz}`) { c.stoppedAt = `${ix},${iz}`; c.stopTimer = 1.4 + Math.random() * 1.2; }
+            if (c.stopTimer > 0) { targetSpeed = 0; c.isBraking = true; }
+            else { targetSpeed = Math.min(targetSpeed, c.baseSpeed * 0.3); c.isBraking = true; }
+          } else if (ahead > 0 && ahead < 22) { targetSpeed = Math.min(targetSpeed, c.baseSpeed * 0.45); c.isBraking = true; }
+          else if (ahead <= -2 && c.stoppedAt === `${ix},${iz}`) c.stoppedAt = null;
+        } else if (k.kind === 'roadClosed') {
+          const sameRoad = c.isNorthSouth ? Math.abs(c.roadX - k.sx) < 1 && Math.abs(k.x - k.sx) < 3 : Math.abs(c.roadZ - k.sz) < 1 && Math.abs(k.z - k.sz) < 3;
+          const ahead = ((c.isNorthSouth ? k.z - c.z : k.x - c.x) * c.direction);
+          if (sameRoad && ahead > 0 && ahead < 9) { this.uTurn(c); break; }
+          if (sameRoad && ahead > 0 && ahead < 30) { targetSpeed = Math.min(targetSpeed, c.baseSpeed * 0.35); c.isBraking = true; }
+          else if ((c.x - k.x) ** 2 + (c.z - k.z) ** 2 < 400) { targetSpeed = Math.min(targetSpeed, c.baseSpeed * 0.5); c.isBraking = true; }
+        } else if (k.kind === 'bridgeClosed') {
+          if (c.isNorthSouth && Math.abs(c.roadX - k.sx) < 1) {
+            const toRiver = c.direction > 0 ? SG.riverMin - c.z : c.z - SG.riverMax;
+            if (toRiver > 0 && toRiver < 40) { targetSpeed = Math.min(targetSpeed, c.baseSpeed * 0.3); c.isBraking = true; }
+          } else if ((c.x - k.x) ** 2 + (c.z - k.z) ** 2 < 1600) { targetSpeed = Math.min(targetSpeed, c.baseSpeed * 0.6); c.isBraking = true; }
+        } else if (k.kind === 'roadWork') {
+          if ((c.x - k.x) ** 2 + (c.z - k.z) ** 2 < 196) { targetSpeed = Math.min(targetSpeed, c.baseSpeed * 0.4); c.isBraking = true; }
+        }
+      }
+      if (c.stopTimer > 0) c.stopTimer -= dt;
+      if (c.stoppedAt && !inc.some((k) => k.kind === 'signalOut')) c.stoppedAt = null;
+
+      // 3. Safe following distance behind the car ahead in my lane
       for (let j = 0; j < this.cars.length; j++) {
         if (i === j) continue;
-        const other = this.cars[j];
-        if (other.isNorthSouth === c.isNorthSouth && other.direction === c.direction) {
-          const latDiff = c.isNorthSouth ? Math.abs(c.x - other.x) : Math.abs(c.z - other.z);
-          if (latDiff < 2.0) {
-            const longDiff = c.isNorthSouth ? (other.z - c.z) * c.direction : (other.x - c.x) * c.direction;
-            if (longDiff > 0 && longDiff < 7.0) {
-              targetSpeed = Math.min(targetSpeed, other.currentSpeed * 0.8);
-              c.isBraking = true;
-            }
-          }
+        const o = this.cars[j];
+        if (o.isNorthSouth !== c.isNorthSouth || o.direction !== c.direction) continue;
+        const latDiff = c.isNorthSouth ? Math.abs(c.x - o.x) : Math.abs(c.z - o.z);
+        if (latDiff >= 1.2) continue;
+        const longDiff = c.isNorthSouth ? (o.z - c.z) * c.direction : (o.x - c.x) * c.direction;
+        if (longDiff > 0 && longDiff < 10.0) {
+          const gap = 4.2 + (o.isBus || c.isBus ? 3.0 : 0);
+          targetSpeed = Math.min(targetSpeed, longDiff < gap ? 0 : o.currentSpeed * 0.8);
+          c.isBraking = true;
         }
       }
 
       c.currentSpeed = THREE.MathUtils.lerp(c.currentSpeed, targetSpeed, 0.15);
 
+      // 4. Move, staying on the road network
       if (c.isNorthSouth) {
-        c.z += c.direction * c.currentSpeed * dt;
-        if (c.z > half) c.z = -half;
-        if (c.z < -half) c.z = half;
-
+        const next = c.z + c.direction * c.currentSpeed * dt;
+        const crossing = c.direction > 0 ? (c.z < SG.riverMin && next >= SG.riverMin - 0.5) : (c.z > SG.riverMax && next <= SG.riverMax + 0.5);
+        const canCross = this.bridged.has(c.roadX) && !closedBridges.has(c.roadX);
+        if (crossing && !canCross) this.uTurn(c); // no bridge here (or it's closed): turn back
+        else c.z = next;
+        if (c.z > ext) c.z = -ext;
+        if (c.z < -ext) c.z = ext;
+        const onBridge = c.z > SG.riverMin - 1.5 && c.z < SG.riverMax + 1.5;
+        const ramp = onBridge ? 0.5 : Math.max(0, 0.5 - Math.min(Math.abs(c.z - SG.riverMin), Math.abs(c.z - SG.riverMax)) * 0.25);
+        c.y = 0.12 + ramp;
         this.dummy.position.set(c.x, c.y, c.z);
         this.dummy.rotation.set(0, c.direction > 0 ? 0 : Math.PI, 0);
       } else {
         c.x += c.direction * c.currentSpeed * dt;
-        if (c.x > half) c.x = -half;
-        if (c.x < -half) c.x = half;
-
+        if (c.x > -10 + ext) c.x = -10 - ext;
+        if (c.x < -10 - ext) c.x = -10 + ext;
+        c.y = 0.12;
         this.dummy.position.set(c.x, c.y, c.z);
         this.dummy.rotation.set(0, c.direction > 0 ? Math.PI / 2 : -Math.PI / 2, 0);
       }

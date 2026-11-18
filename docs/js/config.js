@@ -174,3 +174,23 @@ export const STREET_NAMES = [
   "Beacon St", "Crestview Way", "Mercer St", "Canal St", "Parkside Ave",
   "Foundry Rd", "Liberty St", "Union Blvd", "Highland Ave", "Frontier St"
 ];
+
+// v4: one street grid everything shares (roads, cars, signals, bridges, lights).
+// Blocks sit at -halfSpan + i*(block+street); streets run in the gaps between them and around the edge.
+// The river sits in the gap after the street that follows block row (riverBlockIndex - 1).
+export function streetGrid() {
+  const { gridSize, blockSize, streetWidth, riverWidth, riverBlockIndex } = CITY_CONFIG;
+  const pitch = blockSize + streetWidth;
+  const totalSpan = gridSize * blockSize + (gridSize - 1) * streetWidth + riverWidth;
+  const halfSpan = totalSpan / 2;
+  const xs = [], zs = [];
+  for (let k = 0; k <= gridSize; k++) {
+    xs.push(-halfSpan - streetWidth / 2 + k * pitch);
+    zs.push(-halfSpan - streetWidth / 2 + k * pitch + (k > riverBlockIndex ? riverWidth : 0));
+  }
+  const riverMin = zs[riverBlockIndex] + streetWidth / 2;
+  const riverMax = riverMin + riverWidth;
+  const riverZ = (riverMin + riverMax) / 2;
+  const bridgeKs = [1, 2, 3, 4, 5, 6]; // which north-south streets have a bridge (index into xs)
+  return { xs, zs, riverMin, riverMax, riverZ, bridgeKs, halfSpan, totalSpan, extent: halfSpan + 20 };
+}

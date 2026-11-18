@@ -1,7 +1,7 @@
 // city-builder.js - High-end procedural architectural scale model generator with transparent Underground support
 
 import * as THREE from 'three';
-import { CITY_CONFIG, COLORS } from './config.js';
+import { CITY_CONFIG, COLORS, streetGrid } from './config.js';
 import { createPRNG } from './simulation.js';
 
 // Procedural Canvas Texture Generator for Downtown Window Grids & Building Facades (65% lit at night)
@@ -139,7 +139,8 @@ export function createCityModel(scene, seed = 42, theme = 'dark') {
   cityGroup.add(groundMesh);
 
   // 2. Animated River Water
-  const riverZPos = (riverBlockIndex - gridSize / 2) * (blockSize + streetWidth) + riverWidth / 2;
+  const SG = streetGrid();
+  const riverZPos = SG.riverZ;
   const riverGeo = new THREE.PlaneGeometry(totalSpan + 80, riverWidth);
   const riverMat = new THREE.MeshStandardMaterial({
     color: new THREE.Color(themeColors.river),
@@ -182,25 +183,16 @@ export function createCityModel(scene, seed = 42, theme = 'dark') {
 
   const roadGroup = new THREE.Group();
 
-  for (let gx = 0; gx <= gridSize; gx++) {
-    const x = -halfSpan + gx * (blockSize + streetWidth) + streetWidth / 2;
-    const roadGeo = new THREE.PlaneGeometry(streetWidth, totalSpan + 40);
-    const rMesh = new THREE.Mesh(roadGeo, roadMat);
-    rMesh.rotation.x = -Math.PI / 2;
-    rMesh.position.set(x - blockSize / 2, 0.05, 0);
-    rMesh.receiveShadow = true;
-    roadGroup.add(rMesh);
-  }
-
-  for (let gz = 0; gz <= gridSize; gz++) {
-    let z = -halfSpan + gz * (blockSize + streetWidth) + streetWidth / 2;
-    if (gz >= riverBlockIndex) z += riverWidth;
-    const roadGeo = new THREE.PlaneGeometry(totalSpan + 40, streetWidth);
-    const rMesh = new THREE.Mesh(roadGeo, roadMat);
-    rMesh.rotation.x = -Math.PI / 2;
-    rMesh.position.set(0, 0.05, z - blockSize / 2);
-    rMesh.receiveShadow = true;
-    roadGroup.add(rMesh);
+  // v4: roads run in the real gaps between blocks. North-south roads stop at the river banks;
+  // only the streets with a bridge carry on across (the bridge deck is the road there).
+  const roadStrip = (x, z0, z1) => {
+    const g = new THREE.PlaneGeometry(streetWidth, z1 - z0);
+    const m = new THREE.Mesh(g, roadMat); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.05, (z0 + z1) / 2); m.receiveShadow = true; roadGroup.add(m);
+  };
+  for (const x of SG.xs) { roadStrip(x, -SG.extent, SG.riverMin); roadStrip(x, SG.riverMax, SG.extent); }
+  for (const z of SG.zs) {
+    const g = new THREE.PlaneGeometry(SG.extent * 2, streetWidth);
+    const m = new THREE.Mesh(g, roadMat); m.rotation.x = -Math.PI / 2; m.position.set(-10, 0.05, z); m.receiveShadow = true; roadGroup.add(m);
   }
   cityGroup.add(roadGroup);
 
@@ -275,8 +267,7 @@ export function createCityModel(scene, seed = 42, theme = 'dark') {
   const stripes = new THREE.InstancedMesh(stripeGeo, stripeMat, 2600);
   let sIdx = 0;
   const xLines = [], zLines = [];
-  for (let gx = 0; gx <= gridSize; gx++) xLines.push(-halfSpan + gx * (blockSize + streetWidth) + streetWidth / 2 - blockSize / 2);
-  for (let gz = 0; gz <= gridSize; gz++) { let z = -halfSpan + gz * (blockSize + streetWidth) + streetWidth / 2; if (gz >= riverBlockIndex) z += riverWidth; zLines.push(z - blockSize / 2); }
+  xLines.push(...SG.xs); zLines.push(...SG.zs);
   for (const ix of xLines) for (const iz of zLines) {
     const off = streetWidth / 2 + 1.4;
     for (const [dx, dz, rot] of [[0, off, 0], [0, -off, 0], [off, 0, Math.PI / 2], [-off, 0, Math.PI / 2]]) {
