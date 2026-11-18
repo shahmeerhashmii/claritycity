@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { CITY_CONFIG, COLORS } from './config.js';
 import { createPRNG } from './simulation.js';
+import { mergeParts, box, cyl } from './geo-utils.js';
 
 export class AssetRenderer {
   constructor(scene, masterAssets, seed = 42) {
@@ -24,8 +25,13 @@ export class AssetRenderer {
 
   initMeshes() {
     // 1. Streetlights (400)
-    const postGeo = new THREE.CylinderGeometry(0.12, 0.16, 3.2, 6);
-    postGeo.translate(0, 1.6, 0);
+    // v3: tapered pole, base, curved-out arm and a cobra-head luminaire (arm points toward the road, +x local)
+    const postGeo = mergeParts([
+      { geo: cyl(0.1, 0.17, 4.6, 8), pos: [0, 2.3, 0] },
+      { geo: cyl(0.26, 0.3, 0.35, 8), pos: [0, 0.17, 0] },
+      { geo: box(1.7, 0.09, 0.09), pos: [0.8, 4.45, 0], rot: [0, 0, 0.12] },
+      { geo: box(0.75, 0.16, 0.34), pos: [1.65, 4.48, 0] },
+    ]);
     const postMat = new THREE.MeshStandardMaterial({ color: 0x99A3AD, roughness: 0.5, metalness: 0.8 });
     const streetlightMesh = new THREE.InstancedMesh(postGeo, postMat, 400);
     streetlightMesh.castShadow = true;
@@ -81,8 +87,21 @@ export class AssetRenderer {
     this.proxyMeshes.waterMain = wmProxyMesh;
 
     // 3. Bridges (6)
-    const bridgeGeo = new THREE.BoxGeometry(8.2, 1.8, 22.0);
-    bridgeGeo.translate(0, 1.0, 0);
+    // v3: deck, railings, two concrete piers in the river and a steel arch on each side
+    const archParts = [];
+    for (let k = 0; k <= 10; k++) {
+      const a = (k / 10) * Math.PI, z = -10 + (k / 10) * 20, y = 1.9 + Math.sin(a) * 4.2;
+      for (const x of [-3.9, 3.9]) {
+        archParts.push({ geo: box(0.3, 0.3, 2.3), pos: [x, y, z], rot: [-Math.cos(a) * 0.62, 0, 0] });
+        if (k > 0 && k < 10 && k % 2 === 0) archParts.push({ geo: box(0.1, y - 1.9, 0.1), pos: [x, 1.9 + (y - 1.9) / 2, z] });
+      }
+    }
+    const bridgeGeo = mergeParts([
+      { geo: box(8.2, 0.7, 22.0), pos: [0, 1.5, 0] },
+      { geo: box(0.25, 0.7, 22.0), pos: [-4.0, 2.2, 0] }, { geo: box(0.25, 0.7, 22.0), pos: [4.0, 2.2, 0] },
+      { geo: box(6.5, 2.0, 1.4), pos: [0, 0.2, -4.5] }, { geo: box(6.5, 2.0, 1.4), pos: [0, 0.2, 4.5] },
+      ...archParts,
+    ]);
     const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x88929E, roughness: 0.7, metalness: 0.3 });
     const bridgeMesh = new THREE.InstancedMesh(bridgeGeo, bridgeMat, 6);
     bridgeMesh.castShadow = true;
@@ -92,8 +111,13 @@ export class AssetRenderer {
     this.instancedMeshes.bridge = bridgeMesh;
 
     // 4. Traffic Signals (40)
-    const signalGeo = new THREE.BoxGeometry(0.8, 4.0, 0.8);
-    signalGeo.translate(0, 2.0, 0);
+    // v3: pole with a mast arm over the road and two signal heads
+    const signalGeo = mergeParts([
+      { geo: cyl(0.14, 0.18, 4.6, 8), pos: [0, 2.3, 0] },
+      { geo: box(3.6, 0.13, 0.13), pos: [1.8, 4.4, 0] },
+      { geo: box(0.38, 1.05, 0.34), pos: [2.3, 3.85, 0] }, { geo: box(0.38, 1.05, 0.34), pos: [3.4, 3.85, 0] },
+      { geo: box(0.3, 0.6, 0.3), pos: [0, 2.6, 0.24] },
+    ]);
     const signalMat = new THREE.MeshStandardMaterial({ color: 0x5C6675, roughness: 0.6 });
     const trafficSignalMesh = new THREE.InstancedMesh(signalGeo, signalMat, 40);
     trafficSignalMesh.castShadow = true;
@@ -110,8 +134,15 @@ export class AssetRenderer {
     this.proxyMeshes.trafficSignal = sigProxyMesh;
 
     // 5. Pump Stations (12)
-    const pumpGeo = new THREE.BoxGeometry(4.5, 3.2, 4.5);
-    pumpGeo.translate(0, 1.6, 0);
+    // v3: block pump house with a slab roof overhang, roof vent, discharge pipes and a valve chamber
+    const pumpGeo = mergeParts([
+      { geo: box(4.5, 3.0, 4.0), pos: [0, 1.5, 0] },
+      { geo: box(5.1, 0.3, 4.6), pos: [0, 3.15, 0] },
+      { geo: cyl(0.4, 0.4, 1.0, 10), pos: [1.2, 3.8, 0.6] },
+      { geo: cyl(0.32, 0.32, 3.2, 10), pos: [-2.9, 0.6, -0.8], rot: [0, 0, Math.PI / 2] },
+      { geo: cyl(0.32, 0.32, 3.2, 10), pos: [-2.9, 0.6, 0.8], rot: [0, 0, Math.PI / 2] },
+      { geo: box(1.6, 0.5, 1.6), pos: [-4.0, 0.25, 0] },
+    ]);
     const pumpMat = new THREE.MeshStandardMaterial({ color: 0x6E7B8B, roughness: 0.6, metalness: 0.4 });
     const pumpMesh = new THREE.InstancedMesh(pumpGeo, pumpMat, 12);
     pumpMesh.castShadow = true;
@@ -231,7 +262,7 @@ export class AssetRenderer {
         const sideOffset = (slIdx % 2 === 0 ? 1 : -1) * (streetWidth / 2 + 0.6);
 
         this.dummy.position.set(x + sideOffset, 0.1, z);
-        this.dummy.rotation.set(0, 0, 0);
+        this.dummy.rotation.set(0, sideOffset > 0 ? Math.PI : 0, 0);
         this.dummy.scale.set(1, 1, 1);
         this.dummy.updateMatrix();
         this.instancedMeshes.streetlight.setMatrixAt(slIdx, this.dummy.matrix);
