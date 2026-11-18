@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { CITY_CONFIG } from './config.js';
 import { createPRNG } from './simulation.js';
+import { mergeParts, box, cyl } from './geo-utils.js';
 
 export class TrafficSystem {
   constructor(scene, carCount = 90, seed = 42) {
@@ -35,12 +36,22 @@ export class TrafficSystem {
     const halfSpan = totalSpan / 2;
 
     // Compound vehicle geometry with cab and wheels for scale model realism
-    const chassisGeo = new THREE.BoxGeometry(1.6, 0.45, 3.2);
-    chassisGeo.translate(0, 0.35, 0);
-    const cabinGeo = new THREE.BoxGeometry(1.4, 0.45, 1.8);
-    cabinGeo.translate(0, 0.75, -0.2);
+    // v3: painted body (lower body, hood, trunk, roof) + a dark detail mesh (glass, wheels, lights) sharing each car's matrix
+    const chassisGeo = mergeParts([
+      { geo: box(1.62, 0.5, 3.5), pos: [0, 0.48, 0] },
+      { geo: box(1.5, 0.12, 1.75), pos: [0, 1.11, -0.25] },
+      { geo: box(1.58, 0.08, 0.9), pos: [0, 0.76, 1.2] },
+    ]);
+    const detailGeo = mergeParts([
+      { geo: box(1.48, 0.42, 1.7), pos: [0, 0.92, -0.25] }, // glasshouse
+      ...[[-0.78, 1.15], [0.78, 1.15], [-0.78, -1.15], [0.78, -1.15]].map(([x, z]) => ({ geo: cyl(0.34, 0.34, 0.26, 12), pos: [x, 0.34, z], rot: [0, 0, Math.PI / 2] })),
+      { geo: box(1.66, 0.14, 0.12), pos: [0, 0.38, 1.76] }, { geo: box(1.66, 0.14, 0.12), pos: [0, 0.38, -1.76] }, // bumpers
+    ]);
+    this.detailMesh = new THREE.InstancedMesh(detailGeo, new THREE.MeshStandardMaterial({ color: 0x14181d, roughness: 0.25, metalness: 0.6 }), this.carCount);
+    this.detailMesh.castShadow = true;
+    this.scene.add(this.detailMesh);
 
-    const carMat = new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.4 });
+    const carMat = new THREE.MeshStandardMaterial({ roughness: 0.28, metalness: 0.55 });
     this.mesh = new THREE.InstancedMesh(chassisGeo, carMat, this.carCount);
     this.mesh.castShadow = true;
     this.mesh.name = 'instanced_cars';
@@ -203,9 +214,11 @@ export class TrafficSystem {
         this.dummy.rotation.set(0, c.direction > 0 ? Math.PI / 2 : -Math.PI / 2, 0);
       }
 
-      this.dummy.scale.set(1, 1, 1);
+      this.dummy.scale.set(c.isBus ? 1.45 : 1, c.isBus ? 1.9 : 1, c.isBus ? 2.6 : 1);
       this.dummy.updateMatrix();
       this.mesh.setMatrixAt(i, this.dummy.matrix);
+      if (this.detailMesh) this.detailMesh.setMatrixAt(i, this.dummy.matrix);
+      this.dummy.scale.set(1, 1, 1); this.dummy.updateMatrix();
 
       if (this.headlightsMesh) {
         this.headlightsMesh.setMatrixAt(i, this.dummy.matrix);
@@ -222,11 +235,72 @@ export class TrafficSystem {
     }
 
     this.mesh.instanceMatrix.needsUpdate = true;
+    if (this.detailMesh) this.detailMesh.instanceMatrix.needsUpdate = true;
+    this.updatePeople(dt);
     if (this.headlightsMesh) this.headlightsMesh.instanceMatrix.needsUpdate = true;
     if (this.brakeLightsMesh) this.brakeLightsMesh.instanceMatrix.needsUpdate = true;
   }
 
+  // ---------- v3: people walking the sidewalks ----------
+  initPeople() {
+    const rng = createPRNG(this.seed + 4242);
+    const { gridSize, blockSize, streetWidth, riverWidth, riverBlockIndex } = CITY_CONFIG;
+    const totalSpan = gridSize * blockSize + (gridSize - 1) * streetWidth + riverWidth; const halfSpan = totalSpan / 2;
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    const n = isMobile ? 90 : 240;
+    const bodyGeo = mergeParts([
+      { geo: cyl(0.2, 0.17, 0.62, 8), pos: [0, 1.0, 0] },      // torso
+      { geo: box(0.13, 0.62, 0.15), pos: [-0.1, 0.38, 0] }, { geo: box(0.13, 0.62, 0.15), pos: [0.1, 0.38, 0] }, // legs
+      { geo: box(0.09, 0.5, 0.11), pos: [-0.27, 0.98, 0] }, { geo: box(0.09, 0.5, 0.11), pos: [0.27, 0.98, 0] }, // arms
+    ]);
+    const headGeo = new THREE.SphereGeometry(0.15, 10, 8); headGeo.translate(0, 1.47, 0);
+    this.people = new THREE.InstancedMesh(bodyGeo, new THREE.MeshStandardMaterial({ roughness: 0.8 }), n);
+    this.heads = new THREE.InstancedMesh(headGeo, new THREE.MeshStandardMaterial({ roughness: 0.7 }), n);
+    this.people.castShadow = true;
+    const clothes = [0x2B3A55, 0x8C3337, 0x2E5339, 0xD9C9A8, 0x1E232A, 0x6B5B95, 0xC0763B, 0x4C8DFF, 0xE8E6E1, 0x7A7F87];
+    const skin = [0xF1C9A5, 0xD9A47E, 0xB07A55, 0x8A5A3C, 0x5E3B26];
+    const col = new THREE.Color();
+    const blocks = [];
+    for (let bx = 0; bx < gridSize; bx++) for (let bz = 0; bz < gridSize; bz++) {
+      let x = -halfSpan + bx * (blockSize + streetWidth) + blockSize / 2, z = -halfSpan + bz * (blockSize + streetWidth) + blockSize / 2;
+      if (bz >= riverBlockIndex) z += riverWidth;
+      const busy = (bx >= 2 && bx <= 4 && bz >= 1 && bz <= 3) ? 3 : (bx >= 5 && bz >= 5) ? 0.4 : 1; // downtown is busier
+      blocks.push({ x, z, w: busy });
+    }
+    const totalW = blocks.reduce((s, b) => s + b.w, 0);
+    this.walkers = [];
+    for (let i = 0; i < n; i++) {
+      let r = rng() * totalW, b = blocks[0]; for (const bb of blocks) { r -= bb.w; if (r <= 0) { b = bb; break; } }
+      const half = blockSize / 2 - 0.55;
+      this.walkers.push({ b, half, s: rng() * 8 * half, dir: rng() > 0.5 ? 1 : -1, speed: 0.9 + rng() * 0.9, phase: rng() * 6.28, side: (rng() - 0.5) * 0.5 });
+      this.people.setColorAt(i, col.setHex(clothes[Math.floor(rng() * clothes.length)]));
+      this.heads.setColorAt(i, col.setHex(skin[Math.floor(rng() * skin.length)]));
+    }
+    this.people.instanceColor.needsUpdate = true; this.heads.instanceColor.needsUpdate = true;
+    this.scene.add(this.people); this.scene.add(this.heads);
+  }
+
+  updatePeople(dt) {
+    if (!this.people) this.initPeople();
+    const d = this.dummy;
+    for (let i = 0; i < this.walkers.length; i++) {
+      const w = this.walkers[i]; const P = 8 * w.half;
+      w.s = (w.s + w.dir * w.speed * dt + P) % P; w.phase += dt * w.speed * 7;
+      // walk the block's perimeter: 4 sides of length 2*half
+      const side = Math.floor(w.s / (2 * w.half)), t = w.s % (2 * w.half) - w.half, h = w.half + w.side;
+      let x, z, ry;
+      if (side === 0) { x = w.b.x + t; z = w.b.z - h; ry = w.dir > 0 ? Math.PI / 2 : -Math.PI / 2; }
+      else if (side === 1) { x = w.b.x + h; z = w.b.z + t; ry = w.dir > 0 ? 0 : Math.PI; }
+      else if (side === 2) { x = w.b.x - t; z = w.b.z + h; ry = w.dir > 0 ? -Math.PI / 2 : Math.PI / 2; }
+      else { x = w.b.x - h; z = w.b.z - t; ry = w.dir > 0 ? Math.PI : 0; }
+      d.position.set(x, 0.25 + Math.abs(Math.sin(w.phase)) * 0.05, z); d.rotation.set(Math.sin(w.phase) * 0.04, ry, 0); d.scale.set(1, 1, 1); d.updateMatrix();
+      this.people.setMatrixAt(i, d.matrix); this.heads.setMatrixAt(i, d.matrix);
+    }
+    this.people.instanceMatrix.needsUpdate = true; this.heads.instanceMatrix.needsUpdate = true;
+  }
+
   dispose() {
+    for (const m of [this.detailMesh, this.people, this.heads, this.brakeLightsMesh]) { if (m) { this.scene.remove(m); m.geometry.dispose(); m.material.dispose(); } }
     if (this.mesh) {
       this.scene.remove(this.mesh);
       this.mesh.geometry.dispose();

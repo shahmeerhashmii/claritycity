@@ -90,6 +90,26 @@ function createRoadTexture() {
   return texture;
 }
 
+
+// v3 facades: one canvas per material, drawn as a grid of bays (2 m) by floors (3 m) with random lit windows.
+function makeFacadeTextures() {
+  const make = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t; };
+  const rnd = (() => { let s = 1234567; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
+  const lit = () => (rnd() > 0.45 ? (rnd() > 0.3 ? '#F7E3A6' : '#BFE3FF') : null);
+  const glass = (frame, pane, paneAlt) => (g, w, h) => {
+    g.fillStyle = frame; g.fillRect(0, 0, w, h); const cols = 8, rows = 16, cw = w / cols, ch = h / rows;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const l = lit(); g.fillStyle = l || (rnd() > 0.5 ? pane : paneAlt); g.fillRect(c * cw + 1.5, r * ch + 2, cw - 3, ch - 4); if (!l) { g.fillStyle = 'rgba(255,255,255,.08)'; g.fillRect(c * cw + 1.5, r * ch + 2, cw * 0.35, ch - 4); } }
+  };
+  return {
+    glass: make(128, 256, glass('#1B2633', '#2D4A63', '#355874')),
+    glass2: make(128, 256, glass('#2A2E33', '#3A4650', '#45525C')),
+    office: make(128, 256, (g, w, h) => { g.fillStyle = '#7C7468'; g.fillRect(0, 0, w, h); const cols = 8, rows = 16, cw = w / cols, ch = h / rows; for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { g.fillStyle = lit() || '#2A2F36'; g.fillRect(c * cw + 3, r * ch + 4, cw - 6, ch - 8); } }),
+    brick: make(128, 256, (g, w, h) => { g.fillStyle = '#7A3E2C'; g.fillRect(0, 0, w, h); g.fillStyle = 'rgba(0,0,0,.12)'; for (let y = 0; y < h; y += 4) g.fillRect(0, y, w, 1); const cols = 8, rows = 16, cw = w / cols, ch = h / rows; for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { if (c % 2 && rnd() > 0.3) continue; g.fillStyle = '#D9D2C5'; g.fillRect(c * cw + 3, r * ch + 3, cw - 6, ch - 6); g.fillStyle = lit() || '#2B2F35'; g.fillRect(c * cw + 4, r * ch + 4, cw - 8, ch - 8); } }),
+    house: make(64, 64, (g, w, h) => { g.fillStyle = '#E6E1D8'; g.fillRect(0, 0, w, h); g.fillStyle = 'rgba(0,0,0,.07)'; for (let y = 0; y < h; y += 3) g.fillRect(0, y, w, 1); g.fillStyle = '#FFFFFF'; g.fillRect(8, 10, 16, 14); g.fillRect(40, 10, 16, 14); g.fillStyle = rnd() > 0.4 ? '#F2D58E' : '#2E3A46'; g.fillRect(10, 12, 12, 10); g.fillStyle = '#2E3A46'; g.fillRect(42, 12, 12, 10); g.fillStyle = '#5B4636'; g.fillRect(27, 38, 10, 26); g.fillStyle = '#FFFFFF'; g.fillRect(8, 40, 14, 12); g.fillStyle = '#2E3A46'; g.fillRect(10, 42, 10, 8); }),
+    industrial: make(64, 128, (g, w, h) => { g.fillStyle = '#8E979F'; g.fillRect(0, 0, w, h); g.fillStyle = 'rgba(0,0,0,.18)'; for (let x = 0; x < w; x += 4) g.fillRect(x, 0, 1.5, h); g.fillStyle = '#3B424A'; g.fillRect(8, h - 40, 22, 40); g.fillStyle = '#F5C542'; g.fillRect(8, h - 42, 22, 2); g.fillStyle = '#C9D6E0'; g.fillRect(36, 20, 20, 8); }),
+  };
+}
+
 export function createCityModel(scene, seed = 42, theme = 'dark') {
   const rng = createPRNG(seed);
   const themeColors = COLORS[theme];
@@ -157,7 +177,7 @@ export function createCityModel(scene, seed = 42, theme = 'dark') {
   });
   surfaceMaterials.push(roadMat);
 
-  const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x48515E, roughness: 0.9, transparent: true, opacity: 1.0 });
+  const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x7E848C, roughness: 0.9, transparent: true, opacity: 1.0 });
   surfaceMaterials.push(sidewalkMat);
 
   const roadGroup = new THREE.Group();
@@ -184,58 +204,91 @@ export function createCityModel(scene, seed = 42, theme = 'dark') {
   }
   cityGroup.add(roadGroup);
 
-  // 4. District Buildings
-  const downtownTex = createBuildingTexture('downtown');
-  const residentialTex = createBuildingTexture('residential');
-  const industrialTex = createBuildingTexture('industrial');
+  // 4. District Buildings (v3: textured to real-world scale, mixed building types, lawns, street trees, crosswalks)
+  const T = makeFacadeTextures();
+  const mk = (opts) => { const m = new THREE.MeshStandardMaterial({ transparent: true, opacity: 1.0, ...opts }); surfaceMaterials.push(m); return m; };
+  const glassMat = mk({ map: T.glass, color: 0xD8E6F0, roughness: 0.18, metalness: 0.55 });
+  const glassMat2 = mk({ map: T.glass2, color: 0xE3E0D6, roughness: 0.22, metalness: 0.5 });
+  const officeMat = mk({ map: T.office, color: 0xE9E3D6, roughness: 0.6, metalness: 0.1 });
+  const brickMat = mk({ map: T.brick, color: 0xFFFFFF, roughness: 0.8, metalness: 0.05 });
+  const houseMats = [0xEDE3CC, 0xB9C6B0, 0x9FB2C6, 0xF2F0EA, 0xD6C2A4, 0xC9A99A].map((c) => mk({ map: T.house, color: c, roughness: 0.85 }));
+  const roofMats = [0x3A3E44, 0x55402F, 0x2E3238, 0x6B4A3A].map((c) => mk({ color: c, roughness: 0.9 }));
+  const industrialMat = mk({ map: T.industrial, color: 0xB4BCC6, roughness: 0.75, metalness: 0.35 });
+  const roofMat = mk({ color: 0x2A2F36, roughness: 0.9 });
+  const parkMat = mk({ color: 0x2F5A36, roughness: 0.95 });
+  const lawnMat = mk({ color: 0x3B6A3F, roughness: 1.0 });
+  const waterPlantMat = mk({ color: 0x3E5A74, roughness: 0.6 });
+  const concreteMat = mk({ color: 0x8A9098, roughness: 0.92 });
+  const driveMat = mk({ color: 0x4A4F57, roughness: 0.95 });
 
-  const downtownMat = new THREE.MeshStandardMaterial({
-    map: downtownTex,
-    color: 0xE4EAF0,
-    roughness: 0.35,
-    metalness: 0.3,
-    transparent: true,
-    opacity: 1.0
-  });
-  const residentialMat = new THREE.MeshStandardMaterial({
-    map: residentialTex,
-    color: 0xD0D8E2,
-    roughness: 0.65,
-    metalness: 0.1,
-    transparent: true,
-    opacity: 1.0
-  });
-  const industrialMat = new THREE.MeshStandardMaterial({
-    map: industrialTex,
-    color: 0x9AA5B4,
-    roughness: 0.85,
-    metalness: 0.4,
-    transparent: true,
-    opacity: 1.0
-  });
-  const roofMat = new THREE.MeshStandardMaterial({ color: 0x1E242C, roughness: 0.9, transparent: true, opacity: 1.0 });
-  const parkMat = new THREE.MeshStandardMaterial({ color: 0x27442F, roughness: 0.95, transparent: true, opacity: 1.0 });
-  const waterPlantMat = new THREE.MeshStandardMaterial({ color: 0x3E5A74, roughness: 0.6, transparent: true, opacity: 1.0 });
+  // box with UVs in world units, so window grids keep a real floor height (3 m) and bay width on any size of building
+  function scaledBox(w, h, d, tileW = 16, tileH = 48) {
+    const g = new THREE.BoxGeometry(w, h, d);
+    const uv = g.attributes.uv;
+    const dims = [[d, h], [d, h], [0, 0], [0, 0], [w, h], [w, h]]; // +x -x +y -y +z -z
+    for (let f = 0; f < 6; f++) {
+      const [fw, fh] = dims[f];
+      for (let k = 0; k < 4; k++) {
+        const i = f * 4 + k;
+        if (!fw) { uv.setXY(i, 0.002, 0.002); continue; } // roofs and floors: plain roof colour from the texture corner
+        uv.setXY(i, uv.getX(i) * fw / tileW, uv.getY(i) * fh / tileH);
+      }
+    }
+    uv.needsUpdate = true;
+    return g;
+  }
+  function addBox(mat, w, h, d, x, y, z, ry = 0, tileW, tileH) {
+    const m = new THREE.Mesh(scaledBox(w, h, d, tileW, tileH), mat);
+    m.position.set(x, y, z); m.rotation.y = ry; m.castShadow = true; m.receiveShadow = true; cityGroup.add(m); return m;
+  }
+  // gable roof as a triangular prism
+  function gable(w, d, h, mat, x, y, z, ry) {
+    const shape = new THREE.Shape(); shape.moveTo(-w / 2 - 0.3, 0); shape.lineTo(w / 2 + 0.3, 0); shape.lineTo(0, h); shape.closePath();
+    const g = new THREE.ExtrudeGeometry(shape, { depth: d + 0.6, bevelEnabled: false }); g.translate(0, 0, -(d + 0.6) / 2);
+    const m = new THREE.Mesh(g, mat); m.position.set(x, y, z); m.rotation.y = ry; m.castShadow = true; cityGroup.add(m);
+  }
 
-  surfaceMaterials.push(downtownMat, residentialMat, industrialMat, roofMat, parkMat, waterPlantMat);
-
-  // Instanced Trees
-  const treeCountMax = 250;
-  const trunkGeo = new THREE.CylinderGeometry(0.2, 0.3, 1.4, 5);
-  trunkGeo.translate(0, 0.7, 0);
-  const foliageGeo = new THREE.ConeGeometry(1.4, 2.8, 5);
-  foliageGeo.translate(0, 2.5, 0);
-
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3A281C, roughness: 0.9, transparent: true, opacity: 1.0 });
-  const foliageMat = new THREE.MeshStandardMaterial({ color: 0x2D5A34, roughness: 0.9, transparent: true, opacity: 1.0 });
-  surfaceMaterials.push(trunkMat, foliageMat);
-
+  // Instanced trees (parks + street trees), two foliage tones
+  const treeCountMax = 900;
+  const trunkGeo = new THREE.CylinderGeometry(0.16, 0.24, 1.6, 5); trunkGeo.translate(0, 0.8, 0);
+  const foliageGeo = new THREE.IcosahedronGeometry(1.35, 0); foliageGeo.scale(1, 1.15, 1); foliageGeo.translate(0, 2.6, 0);
+  const trunkMat = mk({ color: 0x4A3424, roughness: 0.9 });
+  const foliageMat = mk({ color: 0xFFFFFF, roughness: 0.9, flatShading: true });
   const instancedTrunks = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCountMax);
   const instancedFoliage = new THREE.InstancedMesh(foliageGeo, foliageMat, treeCountMax);
-  instancedTrunks.castShadow = true;
-  instancedFoliage.castShadow = true;
+  instancedTrunks.castShadow = true; instancedFoliage.castShadow = true;
+  const leafTones = [0x2F6B3A, 0x3E7D3F, 0x285A33, 0x4F8545, 0x6C8F3E];
+  const leafColor = new THREE.Color();
   let treeIdx = 0;
   const dummy = new THREE.Object3D();
+  const addTree = (tx, tz, s) => {
+    if (treeIdx >= treeCountMax) return;
+    dummy.position.set(tx, 0.3, tz); dummy.scale.set(s, s * (0.9 + rng() * 0.3), s); dummy.rotation.set(0, rng() * Math.PI * 2, 0); dummy.updateMatrix();
+    instancedTrunks.setMatrixAt(treeIdx, dummy.matrix); instancedFoliage.setMatrixAt(treeIdx, dummy.matrix);
+    instancedFoliage.setColorAt(treeIdx, leafColor.setHex(leafTones[Math.floor(rng() * leafTones.length)]));
+    treeIdx++;
+  };
+
+  // Zebra crosswalks at every intersection
+  const stripeGeo = new THREE.PlaneGeometry(0.55, 2.4); stripeGeo.rotateX(-Math.PI / 2);
+  const stripeMat = mk({ color: 0xD9DCE0, roughness: 0.7 });
+  const stripes = new THREE.InstancedMesh(stripeGeo, stripeMat, 2600);
+  let sIdx = 0;
+  const xLines = [], zLines = [];
+  for (let gx = 0; gx <= gridSize; gx++) xLines.push(-halfSpan + gx * (blockSize + streetWidth) + streetWidth / 2 - blockSize / 2);
+  for (let gz = 0; gz <= gridSize; gz++) { let z = -halfSpan + gz * (blockSize + streetWidth) + streetWidth / 2; if (gz >= riverBlockIndex) z += riverWidth; zLines.push(z - blockSize / 2); }
+  for (const ix of xLines) for (const iz of zLines) {
+    const off = streetWidth / 2 + 1.4;
+    for (const [dx, dz, rot] of [[0, off, 0], [0, -off, 0], [off, 0, Math.PI / 2], [-off, 0, Math.PI / 2]]) {
+      for (let k = -3; k <= 3; k++) {
+        if (sIdx >= 2600) break;
+        const along = k * 1.05;
+        dummy.position.set(ix + dx + (rot ? 0 : along), 0.07, iz + dz + (rot ? along : 0));
+        dummy.rotation.set(0, rot, 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix(); stripes.setMatrixAt(sIdx++, dummy.matrix);
+      }
+    }
+  }
+  stripes.count = sIdx; stripes.instanceMatrix.needsUpdate = true; cityGroup.add(stripes);
 
   for (let bx = 0; bx < gridSize; bx++) {
     for (let bz = 0; bz < gridSize; bz++) {
@@ -254,34 +307,40 @@ export function createCityModel(scene, seed = 42, theme = 'dark') {
       const isIndustrial = (bx >= 5) && (bz >= 5);
       const isCityHallPlaza = (bx === 2 && bz === 3);
       const isWaterTreatment = (bx === 0 && bz === 4);
+      const isParkade = (bx === 2 && bz === 2); // King Parkade (built in demo-assets.js)
+
+      // street trees around the curb of every non-industrial block
+      if (!isIndustrial && !isWaterTreatment) {
+        const e = blockSize / 2 - 1.6;
+        for (let k = -2; k <= 2; k++) {
+          if (rng() < 0.25) continue;
+          const t = k * (blockSize / 5.2);
+          addTree(x + t, z - e, 0.55); addTree(x + t, z + e, 0.55); addTree(x - e, z + t, 0.55); addTree(x + e, z + t, 0.55);
+        }
+      }
+
+      if (isParkade) {
+        const pad = new THREE.Mesh(new THREE.BoxGeometry(blockSize - 3, 0.3, blockSize - 3), concreteMat);
+        pad.position.set(x, 0.2, z); pad.receiveShadow = true; cityGroup.add(pad);
+        continue;
+      }
 
       if (isCityHallPlaza) {
         const plazaGeo = new THREE.BoxGeometry(blockSize - 3, 0.35, blockSize - 3);
-        const plazaMat = new THREE.MeshStandardMaterial({ color: 0x5C6675, roughness: 0.6, transparent: true, opacity: 1.0 });
-        surfaceMaterials.push(plazaMat);
+        const plazaMat = mk({ color: 0x8C939C, roughness: 0.6 });
         const plazaMesh = new THREE.Mesh(plazaGeo, plazaMat);
         plazaMesh.position.set(x, 0.18, z);
         cityGroup.add(plazaMesh);
-
-        const hallGeo = new THREE.BoxGeometry(blockSize * 0.55, 14, blockSize * 0.45);
-        const hallMat = new THREE.MeshStandardMaterial({ color: 0xDCE2E8, roughness: 0.4, transparent: true, opacity: 1.0 });
-        surfaceMaterials.push(hallMat);
-        const hallMesh = new THREE.Mesh(hallGeo, hallMat);
-        hallMesh.position.set(x, 7.2, z - 3);
-        hallMesh.castShadow = true;
-        hallMesh.receiveShadow = true;
-        cityGroup.add(hallMesh);
-
-        const rotundaGeo = new THREE.CylinderGeometry(3.5, 3.5, 4, 12);
-        const domeGeo = new THREE.SphereGeometry(3.5, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-        const rotundaMesh = new THREE.Mesh(rotundaGeo, hallMat);
-        rotundaMesh.position.set(x, 16, z - 3);
-        const domeMat = new THREE.MeshStandardMaterial({ color: 0x4A6B5D, roughness: 0.5, metalness: 0.4, transparent: true, opacity: 1.0 });
-        surfaceMaterials.push(domeMat);
-        const domeMesh = new THREE.Mesh(domeGeo, domeMat);
-        domeMesh.position.set(x, 18, z - 3);
-        cityGroup.add(rotundaMesh);
-        cityGroup.add(domeMesh);
+        const hallMat = mk({ map: T.office, color: 0xF2EEE6, roughness: 0.5 });
+        addBox(hallMat, blockSize * 0.6, 12, blockSize * 0.42, x, 6.3, z - 3);
+        for (let c = -3; c <= 3; c++) { const col = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 8, 8), hallMat); col.position.set(x + c * 2.1, 4.3, z - 3 + blockSize * 0.21 + 0.8); col.castShadow = true; cityGroup.add(col); }
+        const rotundaMesh = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 3.5, 4, 20), hallMat);
+        rotundaMesh.position.set(x, 14.3, z - 3); cityGroup.add(rotundaMesh);
+        const domeMat = mk({ color: 0x5E8C78, roughness: 0.45, metalness: 0.5 });
+        const domeMesh = new THREE.Mesh(new THREE.SphereGeometry(3.6, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), domeMat);
+        domeMesh.position.set(x, 16.3, z - 3); cityGroup.add(domeMesh);
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 6, 6), concreteMat); pole.position.set(x + 7, 3.3, z + 8); cityGroup.add(pole);
+        const flag = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.2), mk({ color: 0xD52B1E, side: THREE.DoubleSide, roughness: 0.8 })); flag.position.set(x + 8.1, 5.6, z + 8); cityGroup.add(flag);
         continue;
       }
 
@@ -289,45 +348,25 @@ export function createCityModel(scene, seed = 42, theme = 'dark') {
         const plantBase = new THREE.Mesh(new THREE.BoxGeometry(blockSize - 4, 0.3, blockSize - 4), waterPlantMat);
         plantBase.position.set(x, 0.18, z);
         cityGroup.add(plantBase);
-
         for (let ti = 0; ti < 2; ti++) {
           const tankX = x - 6 + ti * 12;
-          const tankGeo = new THREE.CylinderGeometry(4.5, 4.5, 2.5, 16);
-          const tankMat = new THREE.MeshStandardMaterial({ color: 0x2D4559, roughness: 0.6, transparent: true, opacity: 1.0 });
-          surfaceMaterials.push(tankMat);
-          const tankMesh = new THREE.Mesh(tankGeo, tankMat);
-          tankMesh.position.set(tankX, 1.4, z - 4);
-          tankMesh.castShadow = true;
-          cityGroup.add(tankMesh);
+          const tankMat = mk({ color: 0x9FB3C2, roughness: 0.5, metalness: 0.3 });
+          const tankMesh = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, 2.5, 28), tankMat);
+          tankMesh.position.set(tankX, 1.4, z - 4); tankMesh.castShadow = true; cityGroup.add(tankMesh);
+          const water = new THREE.Mesh(new THREE.CylinderGeometry(4.1, 4.1, 0.1, 28), mk({ color: 0x3C6E8F, roughness: 0.1, metalness: 0.6 }));
+          water.position.set(tankX, 2.62, z - 4); cityGroup.add(water);
         }
-
-        const pumpBuilding = new THREE.Mesh(new THREE.BoxGeometry(10, 6, 8), industrialMat);
-        pumpBuilding.position.set(x, 3.2, z + 6);
-        pumpBuilding.castShadow = true;
-        cityGroup.add(pumpBuilding);
+        addBox(industrialMat, 10, 6, 8, x, 3.2, z + 6);
         continue;
       }
 
       if (isPark) {
-        const parkGeo = new THREE.BoxGeometry(blockSize - 3, 0.35, blockSize - 3);
-        const pMesh = new THREE.Mesh(parkGeo, parkMat);
-        pMesh.position.set(x, 0.18, z);
-        pMesh.receiveShadow = true;
-        cityGroup.add(pMesh);
-
-        for (let t = 0; t < 16 && treeIdx < treeCountMax; t++) {
-          const tx = x + (rng() - 0.5) * (blockSize - 8);
-          const tz = z + (rng() - 0.5) * (blockSize - 8);
-          const scale = 0.8 + rng() * 0.5;
-
-          dummy.position.set(tx, 0.3, tz);
-          dummy.scale.set(scale, scale, scale);
-          dummy.rotation.set(0, rng() * Math.PI * 2, 0);
-          dummy.updateMatrix();
-
-          instancedTrunks.setMatrixAt(treeIdx, dummy.matrix);
-          instancedFoliage.setMatrixAt(treeIdx, dummy.matrix);
-          treeIdx++;
+        const pMesh = new THREE.Mesh(new THREE.BoxGeometry(blockSize - 3, 0.35, blockSize - 3), parkMat);
+        pMesh.position.set(x, 0.18, z); pMesh.receiveShadow = true; cityGroup.add(pMesh);
+        for (let t = 0; t < 22; t++) {
+          const tx = x + (rng() - 0.5) * (blockSize - 7), tz = z + (rng() - 0.5) * (blockSize - 7);
+          if (bx === 1 && Math.abs(tx - x) < 7 && Math.abs(tz - z) < 7) continue; // keep the middle clear for the playground
+          addTree(tx, tz, 0.8 + rng() * 0.6);
         }
         continue;
       }
@@ -335,32 +374,26 @@ export function createCityModel(scene, seed = 42, theme = 'dark') {
       if (isDowntown) {
         const parcelDivs = 2;
         const subSize = (blockSize - 4) / parcelDivs;
-
         for (let px = 0; px < parcelDivs; px++) {
           for (let pz = 0; pz < parcelDivs; pz++) {
             const cx = x - (blockSize - 4) / 2 + (px + 0.5) * subSize;
             const cz = z - (blockSize - 4) / 2 + (pz + 0.5) * subSize;
-            const height = 22 + rng() * 32;
-            const bw = subSize * (0.85 + rng() * 0.1);
-            const bd = subSize * (0.85 + rng() * 0.1);
-
-            const bGeo = new THREE.BoxGeometry(bw, height, bd);
-            const bMesh = new THREE.Mesh(bGeo, downtownMat);
-            bMesh.position.set(cx, height / 2 + 0.25, cz);
-            bMesh.castShadow = true;
-            bMesh.receiveShadow = true;
-            cityGroup.add(bMesh);
-
-            const hvacGeo = new THREE.BoxGeometry(bw * 0.5, 2.5, bd * 0.5);
-            const hvacMesh = new THREE.Mesh(hvacGeo, roofMat);
-            hvacMesh.position.set(cx, height + 1.5, cz);
-            cityGroup.add(hvacMesh);
-
-            if (rng() > 0.5) {
-              const antGeo = new THREE.CylinderGeometry(0.1, 0.2, 5, 4);
-              const antMesh = new THREE.Mesh(antGeo, roofMat);
-              antMesh.position.set(cx, height + 5, cz);
-              cityGroup.add(antMesh);
+            const kind = rng();
+            if (kind < 0.6) {
+              // glass tower: podium, setback shaft, crown
+              const mat = rng() > 0.5 ? glassMat : glassMat2;
+              const podH = 6 + rng() * 3, towerH = 24 + rng() * 34;
+              addBox(officeMat, subSize * 0.94, podH, subSize * 0.94, cx, podH / 2 + 0.25, cz);
+              const tw = subSize * (0.62 + rng() * 0.12), td = subSize * (0.62 + rng() * 0.12);
+              addBox(mat, tw, towerH, td, cx, podH + towerH / 2 + 0.25, cz);
+              const top = podH + towerH + 0.25;
+              if (rng() > 0.45) addBox(mat, tw * 0.7, 5 + rng() * 6, td * 0.7, cx, top + 3, cz);
+              else { const h = new THREE.Mesh(new THREE.BoxGeometry(tw * 0.5, 2.2, td * 0.5), roofMat); h.position.set(cx, top + 1.1, cz); cityGroup.add(h); }
+              if (rng() > 0.6) { const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.2, 7, 4), roofMat); ant.position.set(cx, top + 9, cz); cityGroup.add(ant); }
+            } else {
+              const h = 14 + rng() * 14;
+              addBox(rng() > 0.5 ? officeMat : brickMat, subSize * 0.9, h, subSize * 0.9, cx, h / 2 + 0.25, cz);
+              const hv = new THREE.Mesh(new THREE.BoxGeometry(subSize * 0.35, 1.8, subSize * 0.3), roofMat); hv.position.set(cx + 1, h + 1.1, cz - 1); cityGroup.add(hv);
             }
           }
         }
@@ -369,73 +402,56 @@ export function createCityModel(scene, seed = 42, theme = 'dark') {
 
       if (isIndustrial) {
         const subSize = (blockSize - 4) / 2;
+        const yard = new THREE.Mesh(new THREE.BoxGeometry(blockSize - 3, 0.3, blockSize - 3), driveMat); yard.position.set(x, 0.2, z); cityGroup.add(yard);
         for (let px = 0; px < 2; px++) {
           for (let pz = 0; pz < 2; pz++) {
             const cx = x - (blockSize - 4) / 2 + (px + 0.5) * subSize;
             const cz = z - (blockSize - 4) / 2 + (pz + 0.5) * subSize;
-            const height = 4 + rng() * 5;
-            const bw = subSize * 0.9;
-            const bd = subSize * 0.85;
-
-            const bGeo = new THREE.BoxGeometry(bw, height, bd);
-            const bMesh = new THREE.Mesh(bGeo, industrialMat);
-            bMesh.position.set(cx, height / 2 + 0.25, cz);
-            bMesh.castShadow = true;
-            bMesh.receiveShadow = true;
-            cityGroup.add(bMesh);
-
+            const height = 5 + rng() * 5;
+            addBox(industrialMat, subSize * 0.9, height, subSize * 0.8, cx, height / 2 + 0.3, cz, 0, 12, 24);
+            for (let s = -1; s <= 1; s++) { const r = new THREE.Mesh(new THREE.BoxGeometry(subSize * 0.9, 0.5, 1.2), roofMat); r.position.set(cx, height + 0.55, cz + s * subSize * 0.25); cityGroup.add(r); }
             if (rng() > 0.4) {
-              const siloGeo = new THREE.CylinderGeometry(1.8, 1.8, 7, 12);
-              const siloMat = new THREE.MeshStandardMaterial({ color: 0x8894A0, metalness: 0.7, roughness: 0.3, transparent: true, opacity: 1.0 });
-              surfaceMaterials.push(siloMat);
-              const siloMesh = new THREE.Mesh(siloGeo, siloMat);
-              siloMesh.position.set(cx + 3, 3.7, cz + 3);
-              siloMesh.castShadow = true;
-              cityGroup.add(siloMesh);
+              const siloMat = mk({ color: 0xA8B2BC, metalness: 0.7, roughness: 0.3 });
+              const siloMesh = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 8, 18), siloMat);
+              siloMesh.position.set(cx + 3, 4.3, cz + 3); siloMesh.castShadow = true; cityGroup.add(siloMesh);
             }
           }
         }
         continue;
       }
 
+      // Residential: lawns, detached houses with gable roofs and driveways, or a low-rise apartment block
+      const lawn = new THREE.Mesh(new THREE.BoxGeometry(blockSize - 3.4, 0.28, blockSize - 3.4), lawnMat);
+      lawn.position.set(x, 0.2, z); lawn.receiveShadow = true; cityGroup.add(lawn);
+      if (rng() < 0.28) {
+        for (let k = -1; k <= 1; k += 2) {
+          const h = 9 + rng() * 6;
+          addBox(brickMat, blockSize * 0.32, h, blockSize * 0.62, x + k * blockSize * 0.22, h / 2 + 0.3, z);
+          const rf = new THREE.Mesh(new THREE.BoxGeometry(blockSize * 0.32, 0.5, blockSize * 0.62), roofMat); rf.position.set(x + k * blockSize * 0.22, h + 0.55, z); cityGroup.add(rf);
+        }
+        continue;
+      }
       const subSize = (blockSize - 4) / 3;
       for (let px = 0; px < 3; px++) {
         for (let pz = 0; pz < 3; pz++) {
+          if (px === 1 && pz === 1) { addTree(x + (rng() - 0.5) * 3, z + (rng() - 0.5) * 3, 0.9); continue; } // shared backyard
           const cx = x - (blockSize - 4) / 2 + (px + 0.5) * subSize;
           const cz = z - (blockSize - 4) / 2 + (pz + 0.5) * subSize;
-          const height = 3.5 + rng() * 3.5;
-          const bw = subSize * 0.75;
-          const bd = subSize * 0.75;
-
-          const bGeo = new THREE.BoxGeometry(bw, height, bd);
-          const bMesh = new THREE.Mesh(bGeo, residentialMat);
-          bMesh.position.set(cx, height / 2 + 0.25, cz);
-          bMesh.castShadow = true;
-          bMesh.receiveShadow = true;
-          cityGroup.add(bMesh);
-
-          const roofGeo = new THREE.ConeGeometry(bw * 0.8, 2.2, 4);
-          roofGeo.rotateY(Math.PI / 4);
-          const pitchedMat = new THREE.MeshStandardMaterial({ color: 0x783E2D, roughness: 0.8, transparent: true, opacity: 1.0 });
-          surfaceMaterials.push(pitchedMat);
-          const rMesh = new THREE.Mesh(roofGeo, pitchedMat);
-          rMesh.position.set(cx, height + 1.2, cz);
-          rMesh.castShadow = true;
-          cityGroup.add(rMesh);
-
-          if (rng() > 0.4 && treeIdx < treeCountMax) {
-            dummy.position.set(cx + (rng() - 0.5) * 3, 0.3, cz + (rng() - 0.5) * 3);
-            const scale = 0.6 + rng() * 0.3;
-            dummy.scale.set(scale, scale, scale);
-            dummy.updateMatrix();
-            instancedTrunks.setMatrixAt(treeIdx, dummy.matrix);
-            instancedFoliage.setMatrixAt(treeIdx, dummy.matrix);
-            treeIdx++;
-          }
+          const ry = pz === 0 ? Math.PI : pz === 2 ? 0 : px === 0 ? -Math.PI / 2 : Math.PI / 2; // face the street
+          const bw = subSize * 0.62, bd = subSize * 0.55, h = 4.2 + rng() * 2.2;
+          addBox(houseMats[Math.floor(rng() * houseMats.length)], bw, h, bd, cx, h / 2 + 0.3, cz, ry, 8, 6);
+          gable(bw, bd, 1.8 + rng() * 0.8, roofMats[Math.floor(rng() * roofMats.length)], cx, h + 0.3, cz, ry);
+          const fwd = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), ry);
+          const side = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), ry);
+          const dw = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.06, subSize * 0.35), driveMat);
+          dw.position.set(cx + fwd.x * subSize * 0.38 + side.x * bw * 0.32, 0.36, cz + fwd.z * subSize * 0.38 + side.z * bw * 0.32); dw.rotation.y = ry; cityGroup.add(dw);
+          if (rng() > 0.5) addTree(cx - fwd.x * subSize * 0.38 - side.x * 1.5, cz - fwd.z * subSize * 0.38 - side.z * 1.5, 0.6 + rng() * 0.3);
         }
       }
     }
   }
+
+  if (instancedFoliage.instanceColor) instancedFoliage.instanceColor.needsUpdate = true;
 
   instancedTrunks.count = treeIdx;
   instancedFoliage.count = treeIdx;

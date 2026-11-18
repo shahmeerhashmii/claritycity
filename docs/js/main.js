@@ -12,6 +12,7 @@ import { RecordingController } from './recording.js';
 import { exportSummaryImage } from './export-summary.js';
 import { renderAssumptionsForm } from './assumptions-form.js';
 import { TrafficSystem } from './traffic-system.js';
+import { DemoAssets, showDemoCard, hideDemoCard } from './demo-assets.js';
 import { IncidentVFXManager } from './incident-vfx.js';
 import { soundManager } from './sound.js';
 import { TourManager } from './tour.js';
@@ -53,6 +54,8 @@ class App {
     // 4c. Instanced Moving Traffic
     this.trafficA = new TrafficSystem(this.sceneManager.sceneA, 80, this.seed);
     this.trafficB = new TrafficSystem(this.sceneManager.sceneB, 80, this.seed);
+    this.demoA = new DemoAssets(this.sceneManager.sceneA);
+    this.demoB = new DemoAssets(this.sceneManager.sceneB);
 
     // 4d. Sound Toggle Button
     const btnSound = document.getElementById('btn-sound-toggle');
@@ -107,6 +110,7 @@ class App {
         if (this.cityB?.setUndergroundMode) this.cityB.setUndergroundMode(v);
         this.assetRendererA.setUnderground(v);
         this.assetRendererB.setUnderground(v);
+        this.demoA?.setUnderground(v); this.demoB?.setUnderground(v);
         if (v) {
           this.sceneManager.flyTo(new THREE.Vector3(0, 0, 0), new THREE.Vector3(120, 95, 120), 1.0);
         } else {
@@ -296,6 +300,8 @@ class App {
     if (this.assetRendererB?.dispose) this.assetRendererB.dispose();
     if (this.trafficA?.dispose) this.trafficA.dispose();
     if (this.trafficB?.dispose) this.trafficB.dispose();
+    if (this.demoA?.dispose) this.demoA.dispose();
+    if (this.demoB?.dispose) this.demoB.dispose();
     if (this.incidentVFX_A?.dispose) this.incidentVFX_A.dispose();
     if (this.incidentVFX_B?.dispose) this.incidentVFX_B.dispose();
 
@@ -328,6 +334,8 @@ class App {
     this.incidentVFX_B = new IncidentVFXManager(this.sceneManager.sceneB, this.assetRendererB.assetPositions);
     this.trafficA = new TrafficSystem(this.sceneManager.sceneA, 80, this.seed);
     this.trafficB = new TrafficSystem(this.sceneManager.sceneB, 80, this.seed);
+    this.demoA = new DemoAssets(this.sceneManager.sceneA);
+    this.demoB = new DemoAssets(this.sceneManager.sceneB);
 
     // 6. Update Chart and UI state
     this.costChart.setData(this.precomputed.reactive.snapshots, this.precomputed.predictive.snapshots);
@@ -403,6 +411,13 @@ class App {
 
       const clickable = targetRenderer.getClickableMeshes();
       const intersects = raycaster.intersectObjects(clickable, false);
+      // demo-script assets (King Parkade, sidewalk, sanitary, park): nearest hit wins
+      const demo = (this.currentStrategy === 'compare' && coords.isRightSide) ? this.demoB : this.demoA;
+      const dHits = demo ? raycaster.intersectObjects(demo.getClickables(), false) : [];
+      const dBest = dHits.length ? demo.bestHit(dHits) : null;
+      if (dBest && (!intersects.length || dBest.distance < intersects[0].distance || dBest.object.userData.demoId !== 'PTB-KSP-BLDG')) {
+        return { demoInfo: demo.infoFor(dBest.object), isRightSide: coords.isRightSide };
+      }
       if (intersects.length > 0) {
         const hit = intersects[0];
         const assetInfo = targetRenderer.findAssetAt(hit.object, hit.instanceId);
@@ -420,7 +435,11 @@ class App {
       if (dist < 6) { // True click/tap, not a camera drag
         const coords = getNormalizedCoords(e.clientX, e.clientY);
         const result = performPick(coords);
-        if (result && result.assetInfo) {
+        if (result && result.demoInfo) {
+          this.ui.closeAssetInspector();
+          showDemoCard(result.demoInfo, () => { this.demoA?.playStory(); this.demoB?.playStory(); });
+        } else if (result && result.assetInfo) {
+          hideDemoCard();
           const strategyKey = this.currentStrategy === 'compare'
             ? (result.isRightSide ? 'predictive' : 'reactive')
             : (this.currentStrategy === 'predictive' ? 'predictive' : 'reactive');
@@ -445,7 +464,12 @@ class App {
     container.addEventListener('pointermove', (e) => {
       const coords = getNormalizedCoords(e.clientX, e.clientY);
       const result = coords ? performPick(coords) : null;
-      if (result && result.assetInfo) {
+      if (result && result.demoInfo) {
+        container.style.cursor = 'pointer';
+        hoverTooltip.textContent = `${result.demoInfo.id} (${result.demoInfo.desc})`;
+        hoverTooltip.style.left = `${e.clientX + 14}px`; hoverTooltip.style.top = `${e.clientY + 14}px`;
+        hoverTooltip.classList.remove('hidden');
+      } else if (result && result.assetInfo) {
         container.style.cursor = 'pointer';
         const typeLabels = {
           pumpStation: 'PUMP STATION',
@@ -511,6 +535,7 @@ class App {
     const blocksB = this.incidentVFX_B ? this.incidentVFX_B.getActiveEmergencyBlocks() : [];
     if (this.trafficA) this.trafficA.update(dt, blocksA);
     if (this.trafficB) this.trafficB.update(dt, blocksB);
+    this.demoA?.update(dt); this.demoB?.update(dt);
 
     // Timeline playback progress
     if (this.isPlaying) {
